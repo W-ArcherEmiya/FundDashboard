@@ -34,6 +34,9 @@
             case 'restore-sync':
                 app.data.restoreLastSyncData();
                 break;
+            case 'refresh-data':
+                app.data.refreshNetworkData();
+                break;
             case 'switch-tab':
                 app.ui.switchTab(tabId, groupName);
                 break;
