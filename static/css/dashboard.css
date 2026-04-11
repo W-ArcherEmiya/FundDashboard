@@ -275,6 +275,11 @@ body {
     border: 1px solid #FFC6C2;
 }
 
+.fund-item-unavailable {
+    border: 1px solid #E5E6EB;
+    background: linear-gradient(180deg, #FFFFFF 0%, #FBFBFC 100%);
+}
+
 .fund-item-loading {
     display: flex;
     align-items: center;
@@ -284,6 +289,12 @@ body {
 
 .loading-text {
     margin-left: 8px;
+}
+
+.unavailable-copy {
+    font-size: 14px;
+    color: var(--lark-text-body);
+    line-height: 1.5;
 }
 
 .fund-item:active {

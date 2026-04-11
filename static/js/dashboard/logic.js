@@ -47,7 +47,7 @@
         let groupStats = {};
 
         (displayData || []).forEach(data => {
-            if (data.valid && !data.isLoading) {
+            if (data.valid && !data.isLoading && !data.isUnavailable) {
                 totalDaily += data.dailyProfit;
                 totalHold += data.holdProfit;
                 totalAssets += data.totalAsset;
@@ -75,7 +75,16 @@
 
     function buildFundResult(fund, hist, rt) {
         if (!hist && !rt) {
-            return { code: fund.code, valid: false };
+            return {
+                code: fund.code,
+                group: fund.group,
+                name: `基金 ${fund.code}`,
+                gztime: '暂无盘中估算',
+                valid: true,
+                isUnavailable: true,
+                isActual: true,
+                isBackup: true
+            };
         }
 
         const shares = parseFloat(fund.shares) || 0;

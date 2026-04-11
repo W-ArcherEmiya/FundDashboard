@@ -124,6 +124,21 @@
                 return;
             }
 
+            if (item.isUnavailable) {
+                html += `
+                <div class="fund-item fund-item-unavailable" data-action="open-edit" data-code="${utils.escapeHtml(item.code)}">
+                    <div class="f-header">
+                        <div class="f-header-main">
+                            <span class="f-name">${utils.escapeHtml(item.name)}</span>
+                            <span class="f-code">${utils.escapeHtml(item.code)}</span>
+                        </div>
+                        <div class="rate-val bg-flat">待更新</div>
+                    </div>
+                    <div class="unavailable-copy">暂无可靠盘中估算，等待实际净值或下次缓存命中。</div>
+                </div>`;
+                return;
+            }
+
             const rateClass = item.estRate > 0 ? 'bg-up' : (item.estRate < 0 ? 'bg-down' : 'bg-flat');
             const badgeText = (item.isActual ? '实 ' : '估 ') + utils.formatNumber(item.estRate, true) + '%';
             const itemClass = item.isBackup ? 'item-backup' : '';

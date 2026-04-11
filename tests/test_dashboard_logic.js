@@ -103,4 +103,17 @@ runTest('buildFundResult returns fallback realtime snapshot when historical data
     assertAlmostEqual(result.holdProfit, 1.2);
 });
 
+runTest('buildFundResult returns unavailable state when neither realtime nor historical data exists', () => {
+    const result = logic.buildFundResult(
+        { code: '007721', shares: '5', cost: '2', group: '美股' },
+        null,
+        null
+    );
+
+    assert.equal(result.valid, true);
+    assert.equal(result.isUnavailable, true);
+    assert.equal(result.gztime, '暂无盘中估算');
+    assert.equal(result.name, '基金 007721');
+});
+
 console.log('All dashboard logic tests passed.');
