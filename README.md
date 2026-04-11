@@ -35,12 +35,22 @@
 
 ```text
 FundDashboard/
-├── app.py                 # Flask 后端主程序（提供 Web 服务与同步 API）
+├── app.py                     # Flask 后端主程序（提供 Web 服务与同步 API）
+├── static/
+│   ├── css/
+│   │   └── dashboard.css     # 看板页面样式
+│   └── js/
+│       └── dashboard/
+│           ├── state.js      # 前端运行状态与本地持久化
+│           ├── utils.js      # 数字格式化与安全转义工具
+│           ├── data.js       # 同步接口与基金数据抓取逻辑
+│           ├── ui.js         # 页面渲染与交互逻辑
+│           └── main.js       # 启动入口与全局事件绑定
 ├── templates/
-│   └── index.html         # 前端主页面（包含全部 UI 与业务逻辑）
-├── sync_data.json         # 云端同步数据库（自动生成，切勿提交至公开代码库）
-├── .gitignore             # Git 忽略配置
-└── README.md              # 项目说明文档
+│   └── index.html            # 前端页面模板结构
+├── sync_data.json            # 云端同步数据库（自动生成，切勿提交至公开代码库）
+├── .gitignore                # Git 忽略配置
+└── README.md                 # 项目说明文档
 
 ```
 
@@ -67,6 +77,13 @@ sync_data.json
 所有的代码修改（如调整 `index.html` UI 或优化 `app.py` 逻辑）均在本地电脑完成。测试无误后，推送到 GitHub：
 
 ```bash
+# 一条命令运行全部回归测试
+python scripts/run_tests.py
+
+# 如需单独执行
+python -m unittest discover -s tests -v
+node tests/test_dashboard_logic.js
+
 # 添加所有改动
 git add .
 

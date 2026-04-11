@@ -6,73 +6,7 @@
     <title>资产看板</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
-    
-    <style>
-        :root {
-            --lark-blue: #3370FF; --lark-bg: #F5F6F7; --lark-text-title: #1F2329;
-            --lark-text-body: #646A73; --lark-card-bg: #FFFFFF;
-            --stock-red: #D84B45; --stock-green: #2E8B57;
-            --divider: #E5E6EB; --divider-light: #F0F1F3;
-        }
-
-        body { 
-            background-color: var(--lark-bg); 
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; 
-            color: var(--lark-text-title); padding-bottom: 96px; -webkit-font-smoothing: antialiased;
-        }
-        .main-container { max-width: 600px; margin: 0 auto; }
-
-        .nav-header { background: var(--lark-bg); position: sticky; top: 0; z-index: 100; display: flex; align-items: center; justify-content: space-between; padding: 8px 16px; height: 60px; }
-        .nav-tabs { border: none; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; flex: 1; padding-top: 4px; gap: 16px; }
-        .nav-tabs::-webkit-scrollbar { display: none; }
-        .nav-link { border: none; background: transparent; color: var(--lark-text-body); font-size: 16px; font-weight: 500; padding: 8px 0; position: relative; white-space: nowrap; }
-        .nav-link.active { color: var(--lark-text-title); font-weight: 600; }
-        .nav-link.active::after { content: ''; position: absolute; bottom: 0; left: 50%; transform: translateX(-50%); width: 20px; height: 3px; background-color: var(--lark-blue); border-radius: 2px 2px 0 0; }
-
-        .btn-sync { background: #F2F3F5; color: var(--lark-text-title); border: none; border-radius: 14px; padding: 6px 16px; font-size: 15px; font-weight: 500; display: flex; align-items: center; gap: 4px; height: 36px; }
-        .btn-sync:active { background: #E5E6EB; }
-
-        .dashboard-card { background: var(--lark-card-bg); border-radius: 24px; margin: 16px; padding: 24px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02); }
-        .dashboard-label { font-size: 15px; color: var(--lark-text-body); font-weight: 400; margin-bottom: 12px; }
-        .dashboard-main-num { font-size: 36px; font-weight: 700; color: var(--lark-text-title); line-height: 1.15; margin-bottom: 24px; letter-spacing: -0.5px; }
-        .card-divider { height: 1px; background: var(--divider); margin: 0; border: none; }
-        .stat-grid { display: flex; margin-top: 24px; }
-        .stat-item { flex: 1; text-align: center; }
-        .stat-label { font-size: 15px; color: var(--lark-text-body); margin-bottom: 8px; }
-        .stat-val { font-size: 24px; font-weight: 600; }
-
-        .group-breakdown { margin-top: 32px; }
-        .group-breakdown-title { font-size: 15px; color: #86909C; margin-bottom: 8px; }
-        .g-row { display: flex; justify-content: space-between; align-items: center; height: 56px; border-bottom: 1px solid var(--divider-light); }
-        .g-row:last-child { border-bottom: none; }
-        .g-name { font-size: 17px; color: var(--lark-text-title); font-weight: 500; }
-        .g-val { font-size: 17px; font-weight: 600; text-align: right; }
-
-        .update-time { text-align: center; font-size: 14px; color: #86909C; margin-top: 24px; }
-
-        .fund-item { background: var(--lark-card-bg); margin: 16px; padding: 16px; border-radius: 16px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02); cursor: pointer; }
-        .fund-item:active { transform: scale(0.99); }
-        
-        .f-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
-        .f-name { font-size: 17px; font-weight: 600; color: var(--lark-text-title); }
-        .f-code { font-size: 14px; color: #86909C; margin-left: 8px; font-weight: 400; }
-        .rate-val { font-size: 17px; font-weight: 600; padding: 4px 10px; border-radius: 6px; min-width: 76px; text-align: center; }
-        
-        .f-data-grid { display: flex; justify-content: space-between; align-items: flex-end; }
-        .data-label { font-size: 14px; color: #86909C; margin-bottom: 4px; }
-        .data-val { font-size: 15px; font-weight: 600; color: var(--lark-text-title); } 
-
-        .c-up { color: var(--stock-red) !important; } .c-down { color: var(--stock-green) !important; } .c-flat { color: #86909C !important; }
-        .bg-up { background-color: rgba(216, 75, 69, 0.08); color: var(--stock-red); } .bg-down { background-color: rgba(46, 139, 87, 0.08); color: var(--stock-green); } .bg-flat { background-color: #F0F1F3; color: var(--lark-text-body); }
-        .item-backup { border-left: 3px solid #86909C; } 
-        
-        .smart-input-group { position: relative; }
-        .smart-arrow-btn { position: absolute; right: 0; top: 0; bottom: 0; width: 40px; background: transparent; border: none; color: #86909C; z-index: 5; display: flex; align-items: center; justify-content: center; }
-        
-        .fab-btn { position: fixed; bottom: 28px; right: 20px; width: 56px; height: 56px; border-radius: 20px; background-color: var(--lark-blue); color: white; border: none; box-shadow: 0 4px 12px rgba(51, 112, 255, 0.2); z-index: 1000; display: flex; align-items: center; justify-content: center; font-size: 24px; }
-        
-        .refresh-bar { height: 2px; background: var(--lark-blue); width: 0%; transition: width 0.3s; position: fixed; top: 0; left: 0; z-index: 101; }
-    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
 </head>
 <body>
 
@@ -81,27 +15,28 @@
 <div class="main-container">
     <div class="nav-header">
         <ul class="nav nav-tabs" id="fundTabs"></ul>
-        <button class="btn-sync" onclick="openSyncModal()">同步</button>
+        <button class="btn-sync" data-action="open-sync">同步</button>
     </div>
+    <div id="noticeArea" class="notice-area" aria-live="polite"></div>
     <div id="contentArea"></div>
 </div>
 
 <div class="modal fade" id="syncModal" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content border-0 shadow-lg" style="border-radius: 16px;">
+        <div class="modal-content border-0 shadow-lg modal-shell">
             <div class="modal-header border-bottom-0 pt-4 px-4">
-                <h5 class="modal-title fw-bold" style="color: var(--lark-text-title);">数据同步</h5>
+                <h5 class="modal-title fw-bold modal-title-main">数据同步</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body px-4 pb-4">
                 <div class="mb-3">
-                    <label class="form-label" style="font-size: 15px; color: var(--lark-text-body);">专属同步码</label>
+                    <label class="form-label form-label-soft">专属同步码</label>
                     <input type="text" class="form-control" id="syncCodeInput" placeholder="输入任意字符作为暗号(如手机号)">
-                    <div class="form-text mt-2" style="font-size: 14px; color: #86909C;">在不同设备输入相同的同步码，即可互通数据。</div>
+                    <div class="form-text mt-2 sync-help-text">在不同设备输入相同的同步码，即可互通数据。</div>
                 </div>
                 <div class="d-flex gap-3 mt-4">
-                    <button class="btn btn-light w-100 fw-bold" onclick="uploadSyncData()" id="btnUpload" style="color: var(--lark-blue); background: #F0F4FF;">覆盖到云端</button>
-                    <button class="btn w-100 fw-bold" onclick="downloadSyncData()" id="btnDownload" style="background: var(--lark-blue); color: white;">下载到本地</button>
+                    <button class="btn btn-light w-100 fw-bold btn-sync-upload" data-action="upload-sync" id="btnUpload">覆盖到云端</button>
+                    <button class="btn w-100 fw-bold btn-sync-download" data-action="download-sync" id="btnDownload">下载到本地</button>
                 </div>
             </div>
         </div>
@@ -110,30 +45,30 @@
 
 <div class="modal fade" id="addModal" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content border-0 shadow-lg" style="border-radius: 16px;">
+        <div class="modal-content border-0 shadow-lg modal-shell">
             <div class="modal-header border-bottom-0 pt-4 px-4">
-                <h5 class="modal-title fw-bold" style="color: var(--lark-text-title);">资产管理</h5>
+                <h5 class="modal-title fw-bold modal-title-main">资产管理</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body px-4 pb-4">
                 <form id="fundForm">
-                    <input type="hidden" id="editIndex"> 
+                    <input type="hidden" id="editIndex">
                     <div class="mb-3">
-                        <label class="form-label" style="font-size: 15px; color: var(--lark-text-body);">代码</label>
+                        <label class="form-label form-label-soft">代码</label>
                         <input type="tel" class="form-control" id="inputCode" maxlength="6" placeholder="例如 161725">
                     </div>
                     <div class="row mb-3">
                         <div class="col-6">
-                            <label class="form-label" style="font-size: 15px; color: var(--lark-text-body);">份额</label>
+                            <label class="form-label form-label-soft">份额</label>
                             <input type="number" class="form-control" id="inputShares" placeholder="0">
                         </div>
                         <div class="col-6">
-                            <label class="form-label" style="font-size: 15px; color: var(--lark-text-body);">成本</label>
+                            <label class="form-label form-label-soft">成本</label>
                             <input type="number" class="form-control" id="inputCost" placeholder="选填">
                         </div>
                     </div>
                     <div class="mb-2">
-                        <label class="form-label" style="font-size: 15px; color: var(--lark-text-body);">分组</label>
+                        <label class="form-label form-label-soft">分组</label>
                         <div class="smart-input-group dropdown">
                             <input type="text" class="form-control" id="inputGroup" placeholder="输入或选择..." autocomplete="off">
                             <button type="button" class="smart-arrow-btn" data-bs-toggle="dropdown" aria-expanded="false">
@@ -145,321 +80,22 @@
                 </form>
             </div>
             <div class="modal-footer border-top-0 px-4 pb-4">
-                <button type="button" class="btn btn-light text-danger me-auto" id="btnDelete" onclick="deleteFund()" style="display:none;">删除</button>
-                <button type="button" class="btn px-4" onclick="saveFund()" style="background: var(--lark-blue); color: white; border-radius: 8px;">保存</button>
+                <button type="button" class="btn btn-light text-danger me-auto d-none" id="btnDelete" data-action="delete-fund">删除</button>
+                <button type="button" class="btn px-4 btn-save-fund" data-action="save-fund">保存</button>
             </div>
         </div>
     </div>
 </div>
 
-<button class="fab-btn" onclick="openAddModal()"><i class="bi bi-plus-lg"></i></button>
+<button class="fab-btn" data-action="open-add"><i class="bi bi-plus-lg"></i></button>
 
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
-
-<script>
-    let myFunds = JSON.parse(localStorage.getItem('myFunds_v2') || '[]');
-    let cachedResults = []; 
-    let activeTabId = localStorage.getItem('lastActiveTab') || 'tab-summary';
-    let addModal, syncModal;
-
-    function formatNumber(num, forceSign = false) {
-        if (isNaN(num)) return "0.00";
-        let sign = '';
-        if (num > 0.005) sign = forceSign ? '+' : '';
-        else if (num < -0.005) sign = ''; 
-        return sign + num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    }
-
-    function getColorClass(num) {
-        if (num > 0.005) return 'c-up';
-        if (num < -0.005) return 'c-down';
-        return 'c-flat';
-    }
-
-    document.addEventListener('DOMContentLoaded', () => {
-        addModal = new bootstrap.Modal(document.getElementById('addModal'));
-        syncModal = new bootstrap.Modal(document.getElementById('syncModal'));
-        
-        const savedSyncCode = localStorage.getItem('lastSyncCode');
-        if(savedSyncCode) document.getElementById('syncCodeInput').value = savedSyncCode;
-
-        if(myFunds.length > 0) renderUI(true); 
-        refreshNetworkData();
-        setInterval(refreshNetworkData, 60000);
-    });
-
-    // --- 同步模块 ---
-    function openSyncModal() { syncModal.show(); }
-
-    async function uploadSyncData() {
-        const code = document.getElementById('syncCodeInput').value.trim();
-        if(!code) return alert("请输入同步码");
-        if(myFunds.length === 0) return alert("本地无数据");
-        const btn = document.getElementById('btnUpload'); btn.innerHTML = '上传中...'; btn.disabled = true;
-        try {
-            const response = await fetch('/api/sync/save', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sync_code: code, data: myFunds })
-            });
-            const resData = await response.json();
-            if(resData.success) { localStorage.setItem('lastSyncCode', code); alert("上传成功！"); syncModal.hide(); } 
-            else alert("上传失败：" + resData.error);
-        } catch (e) { alert("网络错误"); } 
-        finally { btn.innerHTML = '覆盖到云端'; btn.disabled = false; }
-    }
-
-    async function downloadSyncData() {
-        const code = document.getElementById('syncCodeInput').value.trim();
-        if(!code) return alert("请输入同步码");
-        if(myFunds.length > 0 && !confirm("下载将覆盖当前本地数据，继续？")) return;
-        const btn = document.getElementById('btnDownload'); btn.innerHTML = '下载中...'; btn.disabled = true;
-        try {
-            const response = await fetch('/api/sync/load/' + code);
-            const resData = await response.json();
-            if(resData.success) {
-                myFunds = resData.data;
-                localStorage.setItem('myFunds_v2', JSON.stringify(myFunds));
-                localStorage.setItem('lastSyncCode', code);
-                alert("下载成功！"); syncModal.hide();
-                renderUI(true); refreshNetworkData(); 
-            } else alert("下载失败：" + resData.message);
-        } catch (e) { alert("网络错误或同步码不存在"); } 
-        finally { btn.innerHTML = '下载到本地'; btn.disabled = false; }
-    }
-
-    // --- 核心：防时区、保对账的双通道加载引擎 ---
-    function fetchPingzhong(code) {
-        return new Promise(resolve => {
-            const script = document.createElement('script');
-            script.src = `https://fund.eastmoney.com/pingzhongdata/${code}.js?rt=${Date.now()}`;
-            script.onload = () => {
-                if (window.fS_name && window.Data_netWorthTrend && window.Data_netWorthTrend.length > 0) {
-                    const history = window.Data_netWorthTrend;
-                    const latest = history[history.length - 1];
-                    const prev = history.length > 1 ? history[history.length - 2] : latest;
-                    resolve({ name: window.fS_name, latest: latest.y, prev: prev.y, dateMs: latest.x });
-                } else resolve(null);
-                if(script.parentNode) script.parentNode.removeChild(script);
-            };
-            script.onerror = () => { resolve(null); if(script.parentNode) script.parentNode.removeChild(script); };
-            document.head.appendChild(script);
-        });
-    }
-
-    async function refreshNetworkData() {
-        if (myFunds.length === 0) { renderUI(false); return; }
-        const bar = document.getElementById('refreshBar'); bar.style.width = '10%';
-
-        // 1. 并发获取实时估算 (放宽至 8 秒防移动端超时)
-        let tempResults = {};
-        window.jsonpgz = function(data) { if (data && data.fundcode) tempResults[data.fundcode] = data; };
-        const promises = myFunds.map(fund => new Promise(resolve => {
-            const s = document.createElement('script');
-            s.src = `https://fundgz.1234567.com.cn/js/${fund.code}.js?rt=${Date.now()}`;
-            s.onload = resolve; s.onerror = resolve; document.head.appendChild(s);
-        }));
-        await Promise.race([Promise.all(promises), new Promise(res => setTimeout(res, 8000))]);
-        bar.style.width = '40%';
-        const scripts = document.head.getElementsByTagName('script');
-        while(scripts.length > 0) { document.head.removeChild(scripts[0]); }
-        window.jsonpgz = null;
-
-        // 2. 逐一比对真实结算库 (完美对账核心)
-        let newCachedResults = [];
-        for (let i = 0; i < myFunds.length; i++) {
-            const fund = myFunds[i];
-            const shares = parseFloat(fund.shares) || 0;
-            const cost = parseFloat(fund.cost) || 0;
-
-            // 无论如何，拉取一次它的底层确切结算数据
-            const hist = await fetchPingzhong(fund.code);
-            const rt = tempResults[fund.code];
-
-            if (!hist && !rt) {
-                newCachedResults.push({ code: fund.code, valid: false });
-                continue;
-            }
-
-            let currentNav, prevNav, rate, isActual, timeStr, badgeDate;
-
-            if (hist) {
-                // 关键修复：强行加 8 小时转换回北京时间的 YYYY-MM-DD，防格拉斯哥的坑
-                const bjTime = new Date(hist.dateMs + 8 * 3600 * 1000);
-                const actualDateStr = bjTime.getUTCFullYear() + '-' + String(bjTime.getUTCMonth()+1).padStart(2,'0') + '-' + String(bjTime.getUTCDate()).padStart(2,'0');
-                
-                let gzDateStr = "";
-                if (rt && rt.gztime) gzDateStr = rt.gztime.split(' ')[0];
-
-                // 核心逻辑：如果估算时间 超过了 实际结账时间，说明当前是白天交易时段
-                if (rt && gzDateStr > actualDateStr) {
-                    currentNav = parseFloat(rt.gsz);
-                    prevNav = hist.latest; // 将昨日真实净值作为基准 (完全防误差)
-                    rate = parseFloat(rt.gszzl);
-                    timeStr = rt.gztime;
-                    isActual = false;
-                } else {
-                    // 夜晚结算完毕，或彻底没有实时的基金 (QDII) -> 强制采用真实结算数据
-                    currentNav = hist.latest;
-                    prevNav = hist.prev;
-                    rate = prevNav > 0 ? ((currentNav - prevNav) / prevNav * 100) : 0;
-                    
-                    badgeDate = String(bjTime.getUTCMonth()+1).padStart(2,'0') + '-' + String(bjTime.getUTCDate()).padStart(2,'0');
-                    timeStr = "实际净值 (" + badgeDate + ")";
-                    isActual = true;
-                }
-                
-                newCachedResults.push({
-                    code: fund.code, group: fund.group, name: rt ? rt.name : hist.name,
-                    estRate: rate, estNav: currentNav,
-                    dailyProfit: (currentNav - prevNav) * shares,
-                    holdProfit: cost > 0 ? (currentNav - cost) * shares : 0,
-                    totalAsset: currentNav * shares,
-                    gztime: timeStr, isActual: isActual, isBackup: !rt, valid: true
-                });
-            } else {
-                // 极端备用兜底
-                newCachedResults.push({
-                    code: fund.code, group: fund.group, name: rt.name,
-                    estRate: parseFloat(rt.gszzl), estNav: parseFloat(rt.gsz),
-                    dailyProfit: (parseFloat(rt.gsz) - parseFloat(rt.dwjz)) * shares,
-                    holdProfit: cost > 0 ? (parseFloat(rt.gsz) - cost) * shares : 0,
-                    totalAsset: parseFloat(rt.gsz) * shares,
-                    gztime: rt.gztime, isActual: false, isBackup: false, valid: true
-                });
-            }
-            bar.style.width = `${40 + ((i+1)/myFunds.length)*60}%`;
-        }
-
-        cachedResults = newCachedResults;
-        bar.style.width = '100%';
-        renderUI(false);
-        setTimeout(() => { bar.style.width = '0%'; }, 500);
-    }
-
-    // --- UI 渲染 ---
-    function renderUI(isLoading = false) {
-        const groups = [...new Set(myFunds.map(item => item.group || '默认分组'))];
-        const tabContainer = document.getElementById('fundTabs');
-        let tabsHtml = `<li class="nav-item"><button class="nav-link ${activeTabId === 'tab-summary' ? 'active' : ''}" onclick="switchTab('tab-summary')">概览</button></li>`;
-        groups.forEach((group, index) => {
-            const tabId = `tab-group-${index}`;
-            tabsHtml += `<li class="nav-item"><button class="nav-link ${activeTabId === tabId ? 'active' : ''}" onclick="switchTab('${tabId}', '${group}')">${group}</button></li>`;
-        });
-        tabContainer.innerHTML = tabsHtml;
-        const contentArea = document.getElementById('contentArea');
-        contentArea.innerHTML = generateCurrentTabContent(groups, isLoading);
-    }
-
-    function switchTab(tabId, groupName) { activeTabId = tabId; localStorage.setItem('lastActiveTab', tabId); window.currentActiveGroup = groupName || null; renderUI(false); }
-
-    function generateCurrentTabContent(groups, isLoading) {
-        const displayData = myFunds.map((fund, index) => {
-            if (isLoading) return { ...fund, isLoading: true, valid: true };
-            const data = cachedResults[index];
-            if (!data) return { ...fund, isLoading: true, valid: true }; 
-            if (data.error || !data.valid) return { ...fund, valid: false };
-            return data;
-        });
-
-        if (activeTabId === 'tab-summary') {
-            let totalDaily = 0, totalHold = 0, totalAssets = 0, lastTime = '--:--';
-            let groupStats = {};
-
-            displayData.forEach(d => {
-                if (d.valid && !d.isLoading) {
-                    totalDaily += d.dailyProfit;
-                    totalHold += d.holdProfit;
-                    totalAssets += d.totalAsset;
-                    if(lastTime === '--:--' || d.gztime.includes(':') || d.gztime.includes('更新') || d.gztime.includes('实际')) lastTime = d.gztime; 
-                    
-                    const gName = d.group || '默认分组';
-                    if(!groupStats[gName]) groupStats[gName] = 0;
-                    groupStats[gName] += d.dailyProfit;
-                }
-            });
-
-            let groupHtml = '';
-            for(const [gName, profit] of Object.entries(groupStats)) {
-                groupHtml += `<div class="g-row"><span class="g-name">${gName}</span><span class="g-val ${getColorClass(profit)}">${formatNumber(profit, true)}</span></div>`;
-            }
-
-            return `
-            <div class="dashboard-card">
-                <div class="dashboard-label">总资产</div>
-                <div class="dashboard-main-num">¥${formatNumber(totalAssets, false)}</div>
-                <hr class="card-divider">
-                <div class="stat-grid">
-                    <div class="stat-item">
-                        <div class="stat-label">当日盈亏</div>
-                        <div class="stat-val ${getColorClass(totalDaily)}">${formatNumber(totalDaily, true)}</div>
-                    </div>
-                    <div class="stat-item">
-                        <div class="stat-label">持有盈亏</div>
-                        <div class="stat-val ${getColorClass(totalHold)}">${formatNumber(totalHold, true)}</div>
-                    </div>
-                </div>
-                <div class="group-breakdown">
-                    <div class="group-breakdown-title">分组盈亏分布</div>
-                    <div class="group-list">${groupHtml}</div>
-                </div>
-                <div class="update-time">状态追踪: ${lastTime}</div>
-            </div>`;
-        }
-
-        const currentGroupIndex = parseInt(activeTabId.split('-')[2]);
-        const currentGroupName = groups[currentGroupIndex];
-        const groupItems = displayData.filter(d => (d.group || '默认分组') === currentGroupName);
-        
-        let html = '';
-        groupItems.forEach(item => {
-            if (item.isLoading) return html += `<div class="fund-item"><span class="spinner-border spinner-border-sm" style="color:var(--brand-blue)"></span> <span style="color:var(--lark-text-body); font-size:15px; margin-left:8px;">加载中...</span></div>`;
-            if (!item.valid) return html += `<div class="fund-item" style="border: 1px solid #FFC6C2;" onclick="openEditModal('${item.code}')"><div class="f-name" style="color:var(--stock-red)">加载失败 ${item.code}</div></div>`;
-
-            const sign = item.estRate > 0 ? "+" : "";
-            const rateClass = item.estRate > 0 ? 'bg-up' : (item.estRate < 0 ? 'bg-down' : 'bg-flat');
-            const badgeText = (item.isActual ? '实 ' : '估 ') + formatNumber(item.estRate, true) + '%';
-            const itemClass = item.isBackup ? 'item-backup' : '';
-
-            html += `
-            <div class="fund-item ${itemClass}" onclick="openEditModal('${item.code}')">
-                <div class="f-header">
-                    <div style="flex:1; padding-right:10px;">
-                        <span class="f-name">${item.name}</span>
-                        <span class="f-code">${item.code}</span>
-                    </div>
-                    <div class="rate-val ${rateClass}">${badgeText}</div>
-                </div>
-                <div class="f-data-grid">
-                    <div class="text-start">
-                        <div class="data-label">${item.isActual ? '实际净值' : '估算净值'}</div>
-                        <div class="data-val">${item.estNav.toFixed(4)}</div>
-                    </div>
-                    <div class="text-center">
-                        <div class="data-label">${item.isActual ? '当日(实)' : '当日(估)'}</div>
-                        <div class="data-val ${getColorClass(item.dailyProfit)}">${formatNumber(item.dailyProfit, true)}</div>
-                    </div>
-                    <div class="text-center">
-                        <div class="data-label">持有</div>
-                        <div class="data-val ${getColorClass(item.holdProfit)}">${formatNumber(item.holdProfit, true)}</div>
-                    </div>
-                    <div class="text-end">
-                        <div class="data-label">总金额</div>
-                        <div class="data-val">${formatNumber(item.totalAsset, false)}</div>
-                    </div>
-                </div>
-            </div>`;
-        });
-        
-        html += `<button class="btn w-100 mt-2 mb-4" onclick="openAddModal('${currentGroupName}')" style="border:1px dashed var(--divider); padding:12px; border-radius:12px; color:var(--lark-text-body); font-size:15px;">+ 添加资产到 ${currentGroupName}</button>`;
-        return html;
-    }
-
-    function openAddModal(defaultGroup) { document.getElementById('fundForm').reset(); document.getElementById('inputGroup').value = defaultGroup || window.currentActiveGroup || "默认分组"; document.getElementById('editIndex').value = "-1"; document.getElementById('btnDelete').style.display = 'none'; updateDropdownList(); addModal.show(); }
-    function openEditModal(code) { const index = myFunds.findIndex(f => f.code === code); const fund = myFunds[index]; document.getElementById('inputCode').value = fund.code; document.getElementById('inputShares').value = fund.shares; document.getElementById('inputCost').value = fund.cost; document.getElementById('inputGroup').value = fund.group || "默认分组"; document.getElementById('editIndex').value = index; document.getElementById('btnDelete').style.display = 'block'; updateDropdownList(); addModal.show(); }
-    function updateDropdownList() { const list = document.getElementById('groupDropdownList'); const groups = new Set(myFunds.map(f => f.group || '默认分组')); let html = ''; if (groups.size === 0) html = '<li><span class="dropdown-item text-muted">暂无分组</span></li>'; else groups.forEach(g => { html += `<li><a class="dropdown-item" href="#" onclick="selectGroup('${g}')" style="color:var(--lark-text-title)">${g}</a></li>`; }); list.innerHTML = html; }
-    window.selectGroup = function(val) { document.getElementById('inputGroup').value = val; }
-    function saveFund() { const code = document.getElementById('inputCode').value; const shares = document.getElementById('inputShares').value; const cost = document.getElementById('inputCost').value; const group = document.getElementById('inputGroup').value || "默认分组"; const index = parseInt(document.getElementById('editIndex').value); if (code.length !== 6) return alert("请输入6位代码"); const newFund = { code, shares, cost, group }; if (index === -1) { if (myFunds.some(f => f.code === code)) return alert("该代码已存在"); myFunds.push(newFund); } else { myFunds[index] = newFund; } localStorage.setItem('myFunds_v2', JSON.stringify(myFunds)); addModal.hide(); renderUI(true); refreshNetworkData(); }
-    function deleteFund() { if(confirm("确定删除该资产？")) { myFunds.splice(document.getElementById('editIndex').value, 1); localStorage.setItem('myFunds_v2', JSON.stringify(myFunds)); addModal.hide(); renderUI(true); refreshNetworkData(); } }
-</script>
+<script defer src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+<script defer src="{{ url_for('static', filename='js/dashboard/state.js') }}"></script>
+<script defer src="{{ url_for('static', filename='js/dashboard/utils.js') }}"></script>
+<script defer src="{{ url_for('static', filename='js/dashboard/logic.js') }}"></script>
+<script defer src="{{ url_for('static', filename='js/dashboard/data.js') }}"></script>
+<script defer src="{{ url_for('static', filename='js/dashboard/ui.js') }}"></script>
+<script defer src="{{ url_for('static', filename='js/dashboard/main.js') }}"></script>
 
 </body>
 </html>
