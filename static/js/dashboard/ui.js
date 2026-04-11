@@ -22,6 +22,16 @@
         }
     }
 
+    function renderAmountText(value, options = {}) {
+        const { forceSign = false, currency = false, compact = true } = options;
+        const fullText = utils.formatAmount(value, { forceSign, compact: false });
+        const compactText = utils.formatAmount(value, { forceSign, compact });
+        const displayText = currency ? `¥${compactText}` : compactText;
+        const titleText = currency ? `¥${fullText}` : fullText;
+
+        return `<span class="num-fit" title="${utils.escapeHtml(titleText)}">${utils.escapeHtml(displayText)}</span>`;
+    }
+
     function renderUI(isLoading = false) {
         const groups = logic.getGroups(state.myFunds);
         const tabContainer = document.getElementById('fundTabs');
@@ -120,7 +130,7 @@
                         <div class="summary-header">
                             <div>
                                 <div class="summary-title">总资产</div>
-                                <div class="summary-main-num">¥${utils.formatNumber(totalAssets, false)}</div>
+                                <div class="summary-main-num">${renderAmountText(totalAssets, { currency: true })}</div>
                             </div>
                             <div class="summary-status ${settledCount === displayData.length ? 'summary-status-ready' : 'summary-status-loading'}">
                                 ${settledCount === displayData.length ? '已完成本轮计算' : '正在补齐净值'}
@@ -129,11 +139,11 @@
                         <div class="summary-metrics">
                             <div class="metric-card">
                                 <div class="metric-label">当日盈亏</div>
-                                <div class="metric-value ${utils.getColorClass(totalDaily)}">${utils.formatNumber(totalDaily, true)}</div>
+                                <div class="metric-value ${utils.getColorClass(totalDaily)}">${renderAmountText(totalDaily, { forceSign: true })}</div>
                             </div>
                             <div class="metric-card">
                                 <div class="metric-label">持有盈亏</div>
-                                <div class="metric-value ${utils.getColorClass(totalHold)}">${utils.formatNumber(totalHold, true)}</div>
+                                <div class="metric-value ${utils.getColorClass(totalHold)}">${renderAmountText(totalHold, { forceSign: true })}</div>
                             </div>
                         </div>
                         <div class="distribution-block">
@@ -213,8 +223,8 @@
                 .reduce((sum, entry) => sum + entry.holdProfit, 0);
 
             return `
-                <details class="group-fold" ${index === 0 ? 'open' : ''}>
-                    <summary class="group-row group-fold-summary">
+                <details class="group-fold">
+                    <summary class="group-fold-summary">
                         <div class="group-row-left">
                             <span class="legend-dot ${tone}"></span>
                             <div>
@@ -223,8 +233,8 @@
                             </div>
                         </div>
                         <div class="group-row-right">
-                            <div class="group-row-asset">¥${utils.formatNumber(item.assets, false)}</div>
-                            <div class="group-row-profit ${utils.getColorClass(dailyProfit)}">${utils.formatNumber(dailyProfit, true)}</div>
+                            <div class="group-row-asset">${renderAmountText(item.assets, { currency: true })}</div>
+                            <div class="group-row-profit ${utils.getColorClass(dailyProfit)}">${renderAmountText(dailyProfit, { forceSign: true })}</div>
                         </div>
                         <span class="group-fold-arrow" aria-hidden="true"></span>
                     </summary>
@@ -238,20 +248,16 @@
                             <div class="group-hero-stats">
                                 <div class="hero-stat">
                                     <span class="hero-stat-label">分组资产</span>
-                                    <span class="hero-stat-value">¥${utils.formatNumber(item.assets, false)}</span>
+                                    <span class="hero-stat-value">${renderAmountText(item.assets, { currency: true })}</span>
                                 </div>
                                 <div class="hero-stat">
                                     <span class="hero-stat-label">当日盈亏</span>
-                                    <span class="hero-stat-value ${utils.getColorClass(dailyProfit)}">${utils.formatNumber(dailyProfit, true)}</span>
+                                    <span class="hero-stat-value ${utils.getColorClass(dailyProfit)}">${renderAmountText(dailyProfit, { forceSign: true })}</span>
                                 </div>
                                 <div class="hero-stat">
                                     <span class="hero-stat-label">持有盈亏</span>
-                                    <span class="hero-stat-value ${utils.getColorClass(holdProfit)}">${utils.formatNumber(holdProfit, true)}</span>
+                                    <span class="hero-stat-value ${utils.getColorClass(holdProfit)}">${renderAmountText(holdProfit, { forceSign: true })}</span>
                                 </div>
-                            </div>
-                            <div class="group-hero-actions">
-                                <button class="action-btn action-btn-primary" data-action="open-add" data-default-group="${utils.escapeHtml(item.name)}">添加资产</button>
-                                <button class="action-btn action-btn-secondary" data-action="open-sync">同步</button>
                             </div>
                         </div>
                     </div>
@@ -357,15 +363,15 @@
                     </div>
                     <div class="stat-field">
                         <div class="stat-field-label">${dailyLabel}</div>
-                        <div class="stat-field-value ${utils.getColorClass(item.dailyProfit)}">${utils.formatNumber(item.dailyProfit, true)}</div>
+                        <div class="stat-field-value ${utils.getColorClass(item.dailyProfit)}">${renderAmountText(item.dailyProfit, { forceSign: true })}</div>
                     </div>
                     <div class="stat-field">
                         <div class="stat-field-label">持有盈亏</div>
-                        <div class="stat-field-value ${utils.getColorClass(item.holdProfit)}">${utils.formatNumber(item.holdProfit, true)}</div>
+                        <div class="stat-field-value ${utils.getColorClass(item.holdProfit)}">${renderAmountText(item.holdProfit, { forceSign: true })}</div>
                     </div>
                     <div class="stat-field">
                         <div class="stat-field-label">总金额</div>
-                        <div class="stat-field-value">¥${utils.formatNumber(item.totalAsset, false)}</div>
+                        <div class="stat-field-value">${renderAmountText(item.totalAsset, { currency: true })}</div>
                     </div>
                 </div>
             </article>`;
