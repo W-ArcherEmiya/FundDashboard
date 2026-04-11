@@ -138,6 +138,12 @@ body {
     gap: 16px;
 }
 
+.empty-state-actions {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
 .empty-state-title {
     font-size: 20px;
     font-weight: 700;
@@ -157,6 +163,16 @@ body {
     padding: 12px 18px;
     background: var(--lark-blue);
     color: #fff;
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.empty-state-secondary {
+    border: 1px solid var(--divider);
+    border-radius: 12px;
+    padding: 12px 18px;
+    background: #fff;
+    color: var(--lark-text-title);
     font-size: 15px;
     font-weight: 600;
 }

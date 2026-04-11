@@ -55,11 +55,19 @@
 
         if (state.activeTabId === 'tab-summary') {
             if (state.myFunds.length === 0) {
+                const savedSyncCode = localStorage.getItem('lastSyncCode');
+                const restoreAction = savedSyncCode
+                    ? `<button class="empty-state-secondary" data-action="restore-sync">从云端恢复</button>`
+                    : '';
+
                 return `
                 <div class="dashboard-card empty-state">
                     <div class="empty-state-title">还没有持仓</div>
                     <p class="empty-state-desc">先添加一只基金，之后页面会自动拉取估算净值、计算盈亏，并支持同步到其他设备。</p>
-                    <button class="empty-state-action" data-action="open-add">添加第一笔资产</button>
+                    <div class="empty-state-actions">
+                        <button class="empty-state-action" data-action="open-add">添加第一笔资产</button>
+                        ${restoreAction}
+                    </div>
                 </div>`;
             }
 

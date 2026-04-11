@@ -1,6 +1,43 @@
 (() => {
     const app = window.FundDashboard = window.FundDashboard || {};
     const { state, utils, logic } = app;
+    const HIST_CACHE_KEY = 'fundHistCache_v1';
+    const ESTIMATE_WAIT_MS = 4000;
+    const HIST_TIMEOUT_MS = 2500;
+    const HIST_RENDER_BATCH_SIZE = 5;
+
+    function loadHistCache() {
+        try {
+            const raw = localStorage.getItem(HIST_CACHE_KEY);
+            if (!raw) return {};
+
+            const parsed = JSON.parse(raw);
+            return parsed && typeof parsed === 'object' ? parsed : {};
+        } catch {
+            return {};
+        }
+    }
+
+    function saveHistCache(cache) {
+        localStorage.setItem(HIST_CACHE_KEY, JSON.stringify(cache));
+    }
+
+    function getCachedHist(code) {
+        const cache = loadHistCache();
+        const entry = cache[code];
+        return entry && typeof entry === 'object' ? entry : null;
+    }
+
+    function setCachedHist(code, hist) {
+        const cache = loadHistCache();
+        cache[code] = hist;
+        saveHistCache(cache);
+    }
+
+    function applyResults(results, shouldRender = true) {
+        state.cachedResults = results;
+        if (shouldRender) app.ui.renderUI(false);
+    }
 
     function openSyncModal() {
         state.syncModal.show();
@@ -43,13 +80,14 @@
         }
     }
 
-    async function downloadSyncData() {
-        const code = document.getElementById('syncCodeInput').value.trim();
+    async function downloadSyncData(options = {}) {
+        const { syncCode = null, skipConfirm = false } = options;
+        const code = (syncCode || document.getElementById('syncCodeInput').value).trim();
         if (!code) {
             app.ui.showNotice('请输入同步码', 'error');
             return;
         }
-        if (state.myFunds.length > 0 && !confirm('下载将覆盖当前本地数据，继续？')) return;
+        if (state.myFunds.length > 0 && !skipConfirm && !confirm('下载将覆盖当前本地数据，继续？')) return;
 
         const btn = document.getElementById('btnDownload');
         btn.innerHTML = '下载中...';
@@ -77,15 +115,31 @@
         }
     }
 
-    function fetchPingzhong(code) {
+    async function restoreLastSyncData() {
+        const lastSyncCode = localStorage.getItem('lastSyncCode');
+        if (!lastSyncCode) {
+            app.ui.showNotice('没有可恢复的同步码记录', 'error');
+            return;
+        }
+
+        document.getElementById('syncCodeInput').value = lastSyncCode;
+        await downloadSyncData({ syncCode: lastSyncCode, skipConfirm: true });
+    }
+
+    function fetchPingzhong(code, timeoutMs = HIST_TIMEOUT_MS) {
         return new Promise(resolve => {
             utils.resetPingzhongGlobals();
 
             const script = document.createElement('script');
             script.async = true;
             script.src = `https://fund.eastmoney.com/pingzhongdata/${code}.js?rt=${Date.now()}`;
+            let timerId = null;
+            let finished = false;
 
             const finish = result => {
+                if (finished) return;
+                finished = true;
+                if (timerId) clearTimeout(timerId);
                 if (script.parentNode) script.parentNode.removeChild(script);
                 utils.resetPingzhongGlobals();
                 resolve(result);
@@ -103,6 +157,7 @@
             };
             script.onerror = () => finish(null);
             document.head.appendChild(script);
+            timerId = setTimeout(() => finish(null), timeoutMs);
         });
     }
 
@@ -139,19 +194,33 @@
                 document.head.appendChild(script);
             }));
 
-            await Promise.race([Promise.all(promises), new Promise(res => setTimeout(res, 8000))]);
+            await Promise.race([Promise.all(promises), new Promise(res => setTimeout(res, ESTIMATE_WAIT_MS))]);
             bar.style.width = '40%';
             utils.removeInjectedScripts(estimateScripts);
             window.jsonpgz = undefined;
 
-            const newCachedResults = [];
+            const newCachedResults = state.myFunds.map(fund => {
+                const cachedHist = getCachedHist(fund.code);
+                const rt = tempResults[fund.code];
+                return logic.buildFundResult(fund, cachedHist, rt);
+            });
+            applyResults(newCachedResults);
+
+            let updatedCount = 0;
             for (let i = 0; i < state.myFunds.length; i++) {
                 const fund = state.myFunds[i];
                 const hist = await fetchPingzhong(fund.code);
                 const rt = tempResults[fund.code];
-                newCachedResults.push(logic.buildFundResult(fund, hist, rt));
+                if (hist) setCachedHist(fund.code, hist);
+
+                newCachedResults[i] = logic.buildFundResult(fund, hist || getCachedHist(fund.code), rt);
+                updatedCount += 1;
 
                 bar.style.width = `${40 + ((i + 1) / state.myFunds.length) * 60}%`;
+
+                if (updatedCount % HIST_RENDER_BATCH_SIZE === 0 || i === state.myFunds.length - 1) {
+                    applyResults([...newCachedResults]);
+                }
             }
 
             state.cachedResults = newCachedResults;
@@ -176,6 +245,7 @@
         openSyncModal,
         uploadSyncData,
         downloadSyncData,
+        restoreLastSyncData,
         refreshNetworkData
     };
 })();

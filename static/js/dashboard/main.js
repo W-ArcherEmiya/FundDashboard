@@ -31,6 +31,9 @@
             case 'download-sync':
                 app.data.downloadSyncData();
                 break;
+            case 'restore-sync':
+                app.data.restoreLastSyncData();
+                break;
             case 'switch-tab':
                 app.ui.switchTab(tabId, groupName);
                 break;
