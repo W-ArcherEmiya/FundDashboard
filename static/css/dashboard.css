@@ -340,6 +340,53 @@ button {
     margin-top: 16px;
 }
 
+.group-fold {
+    border: 1px solid var(--divider-light);
+    border-radius: 10px;
+    background: #FBFBFC;
+    overflow: hidden;
+}
+
+.group-fold summary {
+    list-style: none;
+}
+
+.group-fold summary::-webkit-details-marker {
+    display: none;
+}
+
+.group-fold-summary {
+    cursor: pointer;
+    margin: 0;
+}
+
+.group-fold-summary:last-child {
+    border-bottom: none;
+}
+
+.group-fold-arrow {
+    width: 10px;
+    height: 10px;
+    border-right: 2px solid var(--lark-text-meta);
+    border-bottom: 2px solid var(--lark-text-meta);
+    transform: rotate(45deg);
+    transition: transform 0.2s ease;
+    flex: 0 0 auto;
+}
+
+.group-fold[open] .group-fold-arrow {
+    transform: rotate(225deg);
+}
+
+.group-fold-body {
+    border-top: 1px solid var(--divider-light);
+    padding: 16px 18px 18px;
+}
+
+.group-hero-inline {
+    padding: 0;
+}
+
 .group-row {
     display: flex;
     align-items: center;
@@ -872,7 +919,8 @@ button {
 
 @media (hover: hover) {
     .fund-card:hover,
-    .add-tile:hover {
+    .add-tile:hover,
+    .group-fold:hover {
         border-color: rgba(51, 112, 255, 0.28);
         background: rgba(51, 112, 255, 0.03);
         transform: translateY(-1px);
@@ -956,13 +1004,15 @@ button {
     .summary-header,
     .section-head,
     .group-row,
-    .fund-card-header {
+    .fund-card-header,
+    .group-fold-summary {
         flex-direction: column;
         align-items: flex-start;
     }
 
     .summary-status,
-    .status-pill {
+    .status-pill,
+    .group-fold-arrow {
         align-self: flex-start;
     }
 

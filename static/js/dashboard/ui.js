@@ -101,24 +101,7 @@
         const distribution = buildAssetDistribution(displayData);
         const settledCount = displayData.filter(item => !item.isLoading).length;
         const unavailableCount = displayData.filter(item => item.isUnavailable).length;
-        const groupRows = distribution.map((item, index) => {
-            const tone = DISTRIBUTION_TONES[index % DISTRIBUTION_TONES.length];
-            const dailyProfit = groupStats[item.name] || 0;
-            return `
-                <div class="group-row">
-                    <div class="group-row-left">
-                        <span class="legend-dot ${tone}"></span>
-                        <div>
-                            <div class="group-row-name">${utils.escapeHtml(item.name)}</div>
-                            <div class="group-row-meta">${item.count} 项资产 · ${item.shareLabel}</div>
-                        </div>
-                    </div>
-                    <div class="group-row-right">
-                        <div class="group-row-asset">¥${utils.formatNumber(item.assets, false)}</div>
-                        <div class="group-row-profit ${utils.getColorClass(dailyProfit)}">${utils.formatNumber(dailyProfit, true)}</div>
-                    </div>
-                </div>`;
-        }).join('');
+        const groupRows = renderSummaryGroupFolds(displayData, distribution, groupStats);
 
         const stripSegments = distribution.map((item, index) => {
             const tone = DISTRIBUTION_TONES[index % DISTRIBUTION_TONES.length];
@@ -157,7 +140,7 @@
                             <div class="section-head">
                                 <div>
                                     <div class="section-title">资产分布</div>
-                                    <div class="section-subtitle">按分组查看当前资产占比</div>
+                                    <div class="section-subtitle">按分组查看当前资产占比与分组概览</div>
                                 </div>
                                 <div class="section-meta">${groups.length} 个分组</div>
                             </div>
@@ -219,6 +202,63 @@
             </section>`;
     }
 
+    function renderSummaryGroupFolds(displayData, distribution, groupStats) {
+        if (!distribution.length) return '';
+
+        return distribution.map((item, index) => {
+            const tone = DISTRIBUTION_TONES[index % DISTRIBUTION_TONES.length];
+            const dailyProfit = groupStats[item.name] || 0;
+            const holdProfit = displayData
+                .filter(entry => entry.valid && !entry.isLoading && !entry.isUnavailable && (entry.group || '默认分组') === item.name)
+                .reduce((sum, entry) => sum + entry.holdProfit, 0);
+
+            return `
+                <details class="group-fold" ${index === 0 ? 'open' : ''}>
+                    <summary class="group-row group-fold-summary">
+                        <div class="group-row-left">
+                            <span class="legend-dot ${tone}"></span>
+                            <div>
+                                <div class="group-row-name">${utils.escapeHtml(item.name)}</div>
+                                <div class="group-row-meta">${item.count} 项资产 · ${item.shareLabel}</div>
+                            </div>
+                        </div>
+                        <div class="group-row-right">
+                            <div class="group-row-asset">¥${utils.formatNumber(item.assets, false)}</div>
+                            <div class="group-row-profit ${utils.getColorClass(dailyProfit)}">${utils.formatNumber(dailyProfit, true)}</div>
+                        </div>
+                        <span class="group-fold-arrow" aria-hidden="true"></span>
+                    </summary>
+                    <div class="group-fold-body">
+                        <div class="group-hero group-hero-inline">
+                            <div>
+                                <div class="panel-kicker">分组视图</div>
+                                <div class="group-hero-title">${utils.escapeHtml(item.name)}</div>
+                                <div class="group-hero-subtitle">${item.count} 项资产 · 这里展示该分组的概览摘要</div>
+                            </div>
+                            <div class="group-hero-stats">
+                                <div class="hero-stat">
+                                    <span class="hero-stat-label">分组资产</span>
+                                    <span class="hero-stat-value">¥${utils.formatNumber(item.assets, false)}</span>
+                                </div>
+                                <div class="hero-stat">
+                                    <span class="hero-stat-label">当日盈亏</span>
+                                    <span class="hero-stat-value ${utils.getColorClass(dailyProfit)}">${utils.formatNumber(dailyProfit, true)}</span>
+                                </div>
+                                <div class="hero-stat">
+                                    <span class="hero-stat-label">持有盈亏</span>
+                                    <span class="hero-stat-value ${utils.getColorClass(holdProfit)}">${utils.formatNumber(holdProfit, true)}</span>
+                                </div>
+                            </div>
+                            <div class="group-hero-actions">
+                                <button class="action-btn action-btn-primary" data-action="open-add" data-default-group="${utils.escapeHtml(item.name)}">添加资产</button>
+                                <button class="action-btn action-btn-secondary" data-action="open-sync">同步</button>
+                            </div>
+                        </div>
+                    </div>
+                </details>`;
+        }).join('');
+    }
+
     function renderGroupTab(displayData, groups) {
         const { currentGroupName, groupItems } = logic.getCurrentGroupItems(displayData, state.activeTabId, groups);
 
@@ -242,44 +282,10 @@
                 </section>`;
         }
 
-        const groupSummary = groupItems.reduce((acc, item) => {
-            if (item.valid && !item.isLoading && !item.isUnavailable) {
-                acc.assets += item.totalAsset;
-                acc.daily += item.dailyProfit;
-                acc.hold += item.holdProfit;
-            }
-            return acc;
-        }, { assets: 0, daily: 0, hold: 0 });
-
         const cardsHtml = groupItems.map(renderFundCard).join('');
 
         return `
             <section class="page-shell page-shell-group">
-                <div class="panel group-hero">
-                    <div>
-                        <div class="panel-kicker">分组视图</div>
-                        <div class="group-hero-title">${utils.escapeHtml(currentGroupName || '默认分组')}</div>
-                        <div class="group-hero-subtitle">${groupItems.length} 项资产 · 桌面端自动切换为网格布局</div>
-                    </div>
-                    <div class="group-hero-stats">
-                        <div class="hero-stat">
-                            <span class="hero-stat-label">分组资产</span>
-                            <span class="hero-stat-value">¥${utils.formatNumber(groupSummary.assets, false)}</span>
-                        </div>
-                        <div class="hero-stat">
-                            <span class="hero-stat-label">当日盈亏</span>
-                            <span class="hero-stat-value ${utils.getColorClass(groupSummary.daily)}">${utils.formatNumber(groupSummary.daily, true)}</span>
-                        </div>
-                        <div class="hero-stat">
-                            <span class="hero-stat-label">持有盈亏</span>
-                            <span class="hero-stat-value ${utils.getColorClass(groupSummary.hold)}">${utils.formatNumber(groupSummary.hold, true)}</span>
-                        </div>
-                    </div>
-                    <div class="group-hero-actions">
-                        <button class="action-btn action-btn-primary" data-action="open-add" data-default-group="${utils.escapeHtml(currentGroupName)}">添加资产</button>
-                        <button class="action-btn action-btn-secondary" data-action="open-sync">同步</button>
-                    </div>
-                </div>
                 <div class="fund-grid">
                     ${cardsHtml}
                     <button class="add-tile" data-action="open-add" data-default-group="${utils.escapeHtml(currentGroupName)}">
