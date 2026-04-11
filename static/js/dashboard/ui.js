@@ -221,9 +221,10 @@
             const holdProfit = displayData
                 .filter(entry => entry.valid && !entry.isLoading && !entry.isUnavailable && (entry.group || '默认分组') === item.name)
                 .reduce((sum, entry) => sum + entry.holdProfit, 0);
+            const isOpen = (state.summaryFoldOpenGroups || []).includes(item.name);
 
             return `
-                <details class="group-fold">
+                <details class="group-fold" data-group-name="${utils.escapeHtml(item.name)}" ${isOpen ? 'open' : ''}>
                     <summary class="group-fold-summary">
                         <div class="group-row-left">
                             <span class="legend-dot ${tone}"></span>
@@ -239,25 +240,18 @@
                         <span class="group-fold-arrow" aria-hidden="true"></span>
                     </summary>
                     <div class="group-fold-body">
-                        <div class="group-hero group-hero-inline">
-                            <div>
-                                <div class="panel-kicker">分组视图</div>
-                                <div class="group-hero-title">${utils.escapeHtml(item.name)}</div>
-                                <div class="group-hero-subtitle">${item.count} 项资产 · 这里展示该分组的概览摘要</div>
+                        <div class="group-hero-stats group-hero-stats-compact">
+                            <div class="hero-stat">
+                                <span class="hero-stat-label">分组资产</span>
+                                <span class="hero-stat-value">${renderAmountText(item.assets, { currency: true })}</span>
                             </div>
-                            <div class="group-hero-stats">
-                                <div class="hero-stat">
-                                    <span class="hero-stat-label">分组资产</span>
-                                    <span class="hero-stat-value">${renderAmountText(item.assets, { currency: true })}</span>
-                                </div>
-                                <div class="hero-stat">
-                                    <span class="hero-stat-label">当日盈亏</span>
-                                    <span class="hero-stat-value ${utils.getColorClass(dailyProfit)}">${renderAmountText(dailyProfit, { forceSign: true })}</span>
-                                </div>
-                                <div class="hero-stat">
-                                    <span class="hero-stat-label">持有盈亏</span>
-                                    <span class="hero-stat-value ${utils.getColorClass(holdProfit)}">${renderAmountText(holdProfit, { forceSign: true })}</span>
-                                </div>
+                            <div class="hero-stat">
+                                <span class="hero-stat-label">当日盈亏</span>
+                                <span class="hero-stat-value ${utils.getColorClass(dailyProfit)}">${renderAmountText(dailyProfit, { forceSign: true })}</span>
+                            </div>
+                            <div class="hero-stat">
+                                <span class="hero-stat-label">持有盈亏</span>
+                                <span class="hero-stat-value ${utils.getColorClass(holdProfit)}">${renderAmountText(holdProfit, { forceSign: true })}</span>
                             </div>
                         </div>
                     </div>

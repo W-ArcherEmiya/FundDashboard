@@ -6,6 +6,7 @@
         cachedResults: [],
         activeTabId: localStorage.getItem('lastActiveTab') || 'tab-summary',
         currentActiveGroup: null,
+        summaryFoldOpenGroups: JSON.parse(localStorage.getItem('summaryFoldOpen_v1') || '[]'),
         addModal: null,
         syncModal: null,
         refreshInFlight: false,
@@ -19,5 +20,9 @@
 
     app.persistActiveTab = () => {
         localStorage.setItem('lastActiveTab', app.state.activeTabId);
+    };
+
+    app.persistSummaryFolds = () => {
+        localStorage.setItem('summaryFoldOpen_v1', JSON.stringify(app.state.summaryFoldOpenGroups));
     };
 })();

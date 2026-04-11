@@ -57,4 +57,19 @@
                 break;
         }
     });
+
+    document.addEventListener('toggle', event => {
+        const fold = event.target;
+        if (!(fold instanceof HTMLDetailsElement) || !fold.classList.contains('group-fold')) return;
+
+        const groupName = fold.dataset.groupName;
+        if (!groupName) return;
+
+        const openGroups = new Set(state.summaryFoldOpenGroups || []);
+        if (fold.open) openGroups.add(groupName);
+        else openGroups.delete(groupName);
+
+        state.summaryFoldOpenGroups = [...openGroups];
+        app.persistSummaryFolds();
+    }, true);
 })();
