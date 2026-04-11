@@ -23,20 +23,35 @@
     }
 
     function renderUI(isLoading = false) {
+        const groups = logic.getGroups(state.myFunds);
         const tabContainer = document.getElementById('fundTabs');
-        state.activeTabId = 'tab-summary';
-        state.currentActiveGroup = null;
-        app.persistActiveTab();
+        const normalizedTab = logic.normalizeActiveTab(state.activeTabId, groups);
+
+        if (normalizedTab.activeTabId !== state.activeTabId || normalizedTab.currentActiveGroup !== state.currentActiveGroup) {
+            state.activeTabId = normalizedTab.activeTabId;
+            state.currentActiveGroup = normalizedTab.currentActiveGroup;
+            app.persistActiveTab();
+        }
 
         let tabsHtml = `
             <li class="nav-item">
-                <button class="nav-link active" data-action="switch-tab" data-tab-id="tab-summary">
+                <button class="nav-link ${state.activeTabId === 'tab-summary' ? 'active' : ''}" data-action="switch-tab" data-tab-id="tab-summary">
                     <span class="nav-link-text">概览</span>
                 </button>
             </li>`;
 
+        groups.forEach((group, index) => {
+            const tabId = `tab-group-${index}`;
+            tabsHtml += `
+                <li class="nav-item">
+                    <button class="nav-link ${state.activeTabId === tabId ? 'active' : ''}" data-action="switch-tab" data-tab-id="${utils.escapeHtml(tabId)}" data-group-name="${utils.escapeHtml(group)}">
+                        <span class="nav-link-text">${utils.escapeHtml(group)}</span>
+                    </button>
+                </li>`;
+        });
+
         tabContainer.innerHTML = tabsHtml;
-        document.getElementById('contentArea').innerHTML = generateCurrentTabContent(isLoading);
+        document.getElementById('contentArea').innerHTML = generateCurrentTabContent(groups, isLoading);
     }
 
     function switchTab(tabId, groupName) {
@@ -46,10 +61,14 @@
         renderUI(false);
     }
 
-    function generateCurrentTabContent(isLoading) {
+    function generateCurrentTabContent(groups, isLoading) {
         const displayData = logic.buildDisplayData(state.myFunds, state.cachedResults, isLoading);
-        const groups = logic.getGroups(state.myFunds);
-        return renderSummaryTab(displayData, groups);
+
+        if (state.activeTabId === 'tab-summary') {
+            return renderSummaryTab(displayData, groups);
+        }
+
+        return renderGroupTab(displayData, groups);
     }
 
     function renderSummaryTab(displayData, groups) {
@@ -105,7 +124,6 @@
             const tone = DISTRIBUTION_TONES[index % DISTRIBUTION_TONES.length];
             return `<span class="asset-strip-segment ${tone}" style="width:${item.percent.toFixed(2)}%"></span>`;
         }).join('');
-        const groupFoldHtml = renderGroupFolds(displayData, distribution, groupStats);
 
         const syncHint = localStorage.getItem('lastSyncCode')
             ? '本机已记住同步码，可直接恢复云端数据。'
@@ -198,83 +216,79 @@
                         <p class="note-copy">${utils.escapeHtml(syncHint)}</p>
                     </div>
                 </aside>
-                <section class="summary-fold-section">
-                    <div class="panel summary-fold-panel">
-                        <div class="section-head">
-                            <div>
-                                <div class="section-title">分组持仓</div>
-                                <div class="section-subtitle">每个分组可展开查看当前持仓明细</div>
-                            </div>
-                            <div class="section-meta">${distribution.length} 个折叠板块</div>
-                        </div>
-                        <div class="group-fold-list">
-                            ${groupFoldHtml}
-                        </div>
-                    </div>
-                </section>
             </section>`;
     }
 
-    function renderGroupFolds(displayData, distribution, groupStats) {
-        if (distribution.length === 0) {
-            return '<div class="empty-inline">当前还没有可展开的分组持仓。</div>';
-        }
+    function renderGroupTab(displayData, groups) {
+        const { currentGroupName, groupItems } = logic.getCurrentGroupItems(displayData, state.activeTabId, groups);
 
-        return distribution.map((group, index) => {
-            const tone = DISTRIBUTION_TONES[index % DISTRIBUTION_TONES.length];
-            const groupItems = displayData.filter(item => (item.group || '默认分组') === group.name);
-            const groupSummary = groupItems.reduce((acc, item) => {
-                if (item.valid && !item.isLoading && !item.isUnavailable) {
-                    acc.assets += item.totalAsset;
-                    acc.daily += item.dailyProfit;
-                    acc.hold += item.holdProfit;
-                }
-                return acc;
-            }, { assets: 0, daily: 0, hold: 0 });
-            const cardsHtml = groupItems.map(renderFundCard).join('');
-
+        if (groupItems.length === 0) {
             return `
-                <details class="group-fold" ${index === 0 ? 'open' : ''}>
-                    <summary class="group-fold-summary">
-                        <div class="group-fold-summary-main">
-                            <span class="legend-dot ${tone}"></span>
-                            <div>
-                                <div class="group-fold-title">${utils.escapeHtml(group.name)}</div>
-                                <div class="group-fold-meta">${group.count} 项资产 · 占总资产 ${group.shareLabel}</div>
-                            </div>
+                <section class="page-shell page-shell-group">
+                    <div class="panel empty-state">
+                        <div class="empty-illustration" aria-hidden="true">
+                            <span class="empty-illustration-card"></span>
+                            <span class="empty-illustration-chip"></span>
+                            <span class="empty-illustration-line empty-illustration-line-long"></span>
+                            <span class="empty-illustration-line"></span>
                         </div>
-                        <div class="group-fold-summary-side">
-                            <div class="group-fold-asset">¥${utils.formatNumber(groupSummary.assets, false)}</div>
-                            <div class="group-fold-profit ${utils.getColorClass(groupStats[group.name] || 0)}">${utils.formatNumber(groupStats[group.name] || 0, true)}</div>
-                        </div>
-                        <span class="group-fold-arrow" aria-hidden="true"></span>
-                    </summary>
-                    <div class="group-fold-body">
-                        <div class="group-fold-stats">
-                            <div class="hero-stat">
-                                <span class="hero-stat-label">分组资产</span>
-                                <span class="hero-stat-value">¥${utils.formatNumber(groupSummary.assets, false)}</span>
-                            </div>
-                            <div class="hero-stat">
-                                <span class="hero-stat-label">当日盈亏</span>
-                                <span class="hero-stat-value ${utils.getColorClass(groupSummary.daily)}">${utils.formatNumber(groupSummary.daily, true)}</span>
-                            </div>
-                            <div class="hero-stat">
-                                <span class="hero-stat-label">持有盈亏</span>
-                                <span class="hero-stat-value ${utils.getColorClass(groupSummary.hold)}">${utils.formatNumber(groupSummary.hold, true)}</span>
-                            </div>
-                        </div>
-                        <div class="fund-grid group-fold-grid">
-                            ${cardsHtml}
-                            <button class="add-tile" data-action="open-add" data-default-group="${utils.escapeHtml(group.name)}">
-                                <span class="add-tile-icon">+</span>
-                                <span class="add-tile-title">添加到 ${utils.escapeHtml(group.name)}</span>
-                                <span class="add-tile-copy">继续扩展这个分组的持仓</span>
-                            </button>
+                        <div class="empty-state-title">${utils.escapeHtml(currentGroupName || '默认分组')}</div>
+                        <p class="empty-state-desc">这个分组还没有资产。你可以直接添加到当前分组，页面会自动归类并刷新数据。</p>
+                        <div class="empty-state-actions">
+                            <button class="action-btn action-btn-primary" data-action="open-add" data-default-group="${utils.escapeHtml(currentGroupName || '默认分组')}">添加资产</button>
+                            <button class="action-btn action-btn-secondary" data-action="open-sync">同步数据</button>
                         </div>
                     </div>
-                </details>`;
-        }).join('');
+                </section>`;
+        }
+
+        const groupSummary = groupItems.reduce((acc, item) => {
+            if (item.valid && !item.isLoading && !item.isUnavailable) {
+                acc.assets += item.totalAsset;
+                acc.daily += item.dailyProfit;
+                acc.hold += item.holdProfit;
+            }
+            return acc;
+        }, { assets: 0, daily: 0, hold: 0 });
+
+        const cardsHtml = groupItems.map(renderFundCard).join('');
+
+        return `
+            <section class="page-shell page-shell-group">
+                <div class="panel group-hero">
+                    <div>
+                        <div class="panel-kicker">分组视图</div>
+                        <div class="group-hero-title">${utils.escapeHtml(currentGroupName || '默认分组')}</div>
+                        <div class="group-hero-subtitle">${groupItems.length} 项资产 · 桌面端自动切换为网格布局</div>
+                    </div>
+                    <div class="group-hero-stats">
+                        <div class="hero-stat">
+                            <span class="hero-stat-label">分组资产</span>
+                            <span class="hero-stat-value">¥${utils.formatNumber(groupSummary.assets, false)}</span>
+                        </div>
+                        <div class="hero-stat">
+                            <span class="hero-stat-label">当日盈亏</span>
+                            <span class="hero-stat-value ${utils.getColorClass(groupSummary.daily)}">${utils.formatNumber(groupSummary.daily, true)}</span>
+                        </div>
+                        <div class="hero-stat">
+                            <span class="hero-stat-label">持有盈亏</span>
+                            <span class="hero-stat-value ${utils.getColorClass(groupSummary.hold)}">${utils.formatNumber(groupSummary.hold, true)}</span>
+                        </div>
+                    </div>
+                    <div class="group-hero-actions">
+                        <button class="action-btn action-btn-primary" data-action="open-add" data-default-group="${utils.escapeHtml(currentGroupName)}">添加资产</button>
+                        <button class="action-btn action-btn-secondary" data-action="open-sync">同步</button>
+                    </div>
+                </div>
+                <div class="fund-grid">
+                    ${cardsHtml}
+                    <button class="add-tile" data-action="open-add" data-default-group="${utils.escapeHtml(currentGroupName)}">
+                        <span class="add-tile-icon">+</span>
+                        <span class="add-tile-title">添加到 ${utils.escapeHtml(currentGroupName)}</span>
+                        <span class="add-tile-copy">继续扩展这个分组的持仓</span>
+                    </button>
+                </div>
+            </section>`;
     }
 
     function renderFundCard(item) {
