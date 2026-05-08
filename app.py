@@ -1,8 +1,10 @@
 from flask import Flask, render_template, request, jsonify
+from datetime import datetime, timezone
 import json
 import os
 import re
 import tempfile
+import threading
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 256 * 1024
@@ -12,6 +14,11 @@ DATA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'sync_data.
 SYNC_CODE_MAX_LENGTH = 64
 GROUP_MAX_LENGTH = 32
 MAX_FUNDS_PER_SYNC = 500
+DATA_LOCK = threading.Lock()
+
+
+def utc_now_iso():
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00', 'Z')
 
 
 def normalize_sync_code(value):
@@ -97,6 +104,16 @@ def save_data(data):
             os.remove(temp_path)
         raise
 
+
+def unpack_sync_entry(entry):
+    """兼容旧版 list 存储和新版带元数据的对象存储。"""
+    if isinstance(entry, list):
+        return entry, None
+    if isinstance(entry, dict) and isinstance(entry.get('data'), list):
+        updated_at = entry.get('updated_at')
+        return entry['data'], updated_at if isinstance(updated_at, str) else None
+    return None, None
+
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -123,15 +140,25 @@ def sync_save():
     if error:
         return jsonify({"success": False, "error": error}), 400
 
-    db = load_data()
-    db[sync_code] = funds_data
+    updated_at = utc_now_iso()
 
     try:
-        save_data(db)
+        with DATA_LOCK:
+            db = load_data()
+            db[sync_code] = {
+                "data": funds_data,
+                "updated_at": updated_at,
+            }
+            save_data(db)
     except OSError:
         return jsonify({"success": False, "error": "写入同步数据失败"}), 500
 
-    return jsonify({"success": True, "message": "上传成功"})
+    return jsonify({
+        "success": True,
+        "message": "上传成功",
+        "updated_at": updated_at,
+        "count": len(funds_data),
+    })
 
 @app.route('/api/sync/load/<sync_code>', methods=['GET'])
 def sync_load(sync_code):
@@ -142,7 +169,14 @@ def sync_load(sync_code):
 
     db = load_data()
     if sync_code in db:
-        return jsonify({"success": True, "data": db[sync_code]})
+        funds_data, updated_at = unpack_sync_entry(db[sync_code])
+        if funds_data is not None:
+            return jsonify({
+                "success": True,
+                "data": funds_data,
+                "updated_at": updated_at,
+            })
+        return jsonify({"success": False, "message": "同步数据格式异常，请重新上传"}), 500
     else:
         return jsonify({"success": False, "message": "未找到该同步码的数据，请先上传"}), 404
 

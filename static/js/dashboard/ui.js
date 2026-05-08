@@ -118,8 +118,9 @@
             return `<span class="asset-strip-segment ${tone}" style="width:${item.percent.toFixed(2)}%"></span>`;
         }).join('');
 
+        const lastSyncUpdatedAt = localStorage.getItem('lastSyncUpdatedAt');
         const syncHint = localStorage.getItem('lastSyncCode')
-            ? '本机已记住同步码，可直接恢复云端数据。'
+            ? `本机已记住同步码${lastSyncUpdatedAt ? `，最近云端更新时间 ${utils.formatSyncTime(lastSyncUpdatedAt)}。` : '，可直接恢复云端数据。'}`
             : '当前设备还没有保存同步码。';
 
         return `
@@ -439,14 +440,26 @@
     }
 
     function saveFund() {
-        const code = document.getElementById('inputCode').value;
-        const shares = document.getElementById('inputShares').value;
-        const cost = document.getElementById('inputCost').value;
-        const group = document.getElementById('inputGroup').value || '默认分组';
+        const code = document.getElementById('inputCode').value.trim();
+        const shares = document.getElementById('inputShares').value.trim();
+        const cost = document.getElementById('inputCost').value.trim();
+        const group = document.getElementById('inputGroup').value.trim() || '默认分组';
         const index = parseInt(document.getElementById('editIndex').value, 10);
 
-        if (code.length !== 6) {
-            showNotice('请输入 6 位基金代码', 'error');
+        if (!/^\d{6}$/.test(code)) {
+            showNotice('请输入 6 位数字基金代码', 'error');
+            return;
+        }
+        if (shares === '' || Number.isNaN(Number(shares)) || Number(shares) < 0) {
+            showNotice('份额必须是非负数字', 'error');
+            return;
+        }
+        if (cost !== '' && (Number.isNaN(Number(cost)) || Number(cost) < 0)) {
+            showNotice('成本必须为空或非负数字', 'error');
+            return;
+        }
+        if (group.length > 32) {
+            showNotice('分组名称不能超过 32 个字符', 'error');
             return;
         }
 

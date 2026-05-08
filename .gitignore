@@ -2,3 +2,6 @@ __pycache__/
 *.pyc
 .env
 sync_data.json
+.tmp/
+flask-dev.log
+tests/.tmp_sync_data.json
