@@ -2,6 +2,7 @@
     const app = window.FundDashboard = window.FundDashboard || {};
     const { state, utils, logic } = app;
     const HIST_CACHE_KEY = 'fundHistCache_v1';
+    const HIST_CACHE_TTL_MS = 36 * 60 * 60 * 1000;
     const ESTIMATE_WAIT_MS = 4000;
     const HIST_TIMEOUT_MS = 2500;
     const HIST_RENDER_BATCH_SIZE = 5;
@@ -25,12 +26,23 @@
     function getCachedHist(code) {
         const cache = loadHistCache();
         const entry = cache[code];
-        return entry && typeof entry === 'object' ? entry : null;
+        if (!entry || typeof entry !== 'object') return null;
+
+        if ('value' in entry) {
+            const cachedAt = Number(entry.cachedAt) || 0;
+            if (!cachedAt || Date.now() - cachedAt > HIST_CACHE_TTL_MS) return null;
+            return entry.value && typeof entry.value === 'object' ? entry.value : null;
+        }
+
+        return entry;
     }
 
     function setCachedHist(code, hist) {
         const cache = loadHistCache();
-        cache[code] = hist;
+        cache[code] = {
+            value: hist,
+            cachedAt: Date.now()
+        };
         saveHistCache(cache);
     }
 
@@ -67,6 +79,7 @@
             const resData = await response.json();
             if (resData.success) {
                 localStorage.setItem('lastSyncCode', code);
+                if (resData.updated_at) localStorage.setItem('lastSyncUpdatedAt', resData.updated_at);
                 app.ui.showNotice('数据已上传到云端', 'success');
                 state.syncModal.hide();
             } else {
@@ -100,7 +113,9 @@
                 state.myFunds = resData.data;
                 app.persistFunds();
                 localStorage.setItem('lastSyncCode', code);
-                app.ui.showNotice('云端数据已同步到本地', 'success');
+                if (resData.updated_at) localStorage.setItem('lastSyncUpdatedAt', resData.updated_at);
+                const syncTime = resData.updated_at ? `，云端更新时间 ${utils.formatSyncTime(resData.updated_at)}` : '';
+                app.ui.showNotice(`云端数据已同步到本地${syncTime}`, 'success', 4000);
                 state.syncModal.hide();
                 app.ui.renderUI(true);
                 refreshNetworkData();

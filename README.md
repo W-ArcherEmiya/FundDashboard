@@ -111,5 +111,5 @@ git pull origin main
 ### 4. 第三步：重启服务使更新生效
 
 1. 在 PythonAnywhere 控制台导航至 **Web** 标签页。
-2. 点击上方绿色的 **Reload https://www.google.com/search?q=xxx.pythonanywhere.com** 按钮。
+2. 点击上方绿色的 **Reload https://xxx.pythonanywhere.com** 按钮。
 3. 刷新手机或浏览器端网页，最新代码即刻生效。

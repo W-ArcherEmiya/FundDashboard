@@ -1,20 +1,23 @@
 import os
-import tempfile
 import unittest
+from pathlib import Path
 
 import app as fund_app
 
 
 class FundDashboardAppTests(unittest.TestCase):
     def setUp(self):
-        self.temp_dir = tempfile.TemporaryDirectory()
         self.original_data_file = fund_app.DATA_FILE
-        fund_app.DATA_FILE = os.path.join(self.temp_dir.name, 'sync_data.json')
+        self.test_data_file = Path(__file__).resolve().parent / '.tmp_sync_data.json'
+        if self.test_data_file.exists():
+            self.test_data_file.unlink()
+        fund_app.DATA_FILE = str(self.test_data_file)
         self.client = fund_app.app.test_client()
 
     def tearDown(self):
         fund_app.DATA_FILE = self.original_data_file
-        self.temp_dir.cleanup()
+        if self.test_data_file.exists():
+            self.test_data_file.unlink()
 
     def test_normalize_sync_code_rejects_empty_and_too_long_values(self):
         self.assertIsNone(fund_app.normalize_sync_code('   '))
@@ -64,6 +67,22 @@ class FundDashboardAppTests(unittest.TestCase):
         self.assertTrue(payload['success'])
         self.assertEqual(len(payload['data']), 2)
         self.assertEqual(payload['data'][1]['group'], '默认分组')
+        self.assertIn('updated_at', payload)
+
+    def test_sync_load_supports_legacy_list_payload(self):
+        fund_app.save_data({
+            'legacy-code': [
+                {'code': '000001', 'shares': '1.0', 'cost': '', 'group': '默认分组'}
+            ]
+        })
+
+        response = self.client.get('/api/sync/load/legacy-code')
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload['success'])
+        self.assertEqual(payload['data'][0]['code'], '000001')
+        self.assertIsNone(payload['updated_at'])
 
     def test_sync_save_rejects_invalid_json_shape(self):
         response = self.client.post('/api/sync/save', json=['not-an-object'])
