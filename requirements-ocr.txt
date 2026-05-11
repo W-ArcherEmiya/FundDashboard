@@ -1,0 +1,4 @@
+# Optional server-side OCR engine. Install this on the server to enable /api/ocr/recognize.
+# Use the current rapidocr package for Python 3.13 compatibility.
+rapidocr>=3.8
+Pillow>=10

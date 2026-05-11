@@ -108,6 +108,12 @@ class FundDashboardAppTests(unittest.TestCase):
         self.assertEqual(response.status_code, 404)
         self.assertFalse(response.get_json()['success'])
 
+    def test_ocr_recognize_rejects_missing_image(self):
+        response = self.client.post('/api/ocr/recognize', data={})
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(response.get_json()['success'])
+
     def test_index_page_and_static_assets_are_served(self):
         index_response = self.client.get('/')
         self.assertEqual(index_response.status_code, 200)
@@ -121,6 +127,7 @@ class FundDashboardAppTests(unittest.TestCase):
             '/static/js/dashboard/state.js',
             '/static/js/dashboard/utils.js',
             '/static/js/dashboard/data.js',
+            '/static/js/dashboard/ocr.js',
             '/static/js/dashboard/ui.js',
             '/static/js/dashboard/main.js',
         ]

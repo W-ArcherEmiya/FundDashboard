@@ -7,14 +7,17 @@ import tempfile
 import threading
 
 app = Flask(__name__)
-app.config['MAX_CONTENT_LENGTH'] = 256 * 1024
+app.config['MAX_CONTENT_LENGTH'] = 9 * 1024 * 1024
 
 # 确保存储文件和你的 app.py 在同一个目录
 DATA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'sync_data.json')
 SYNC_CODE_MAX_LENGTH = 64
 GROUP_MAX_LENGTH = 32
 MAX_FUNDS_PER_SYNC = 500
+OCR_MAX_IMAGE_BYTES = 8 * 1024 * 1024
 DATA_LOCK = threading.Lock()
+OCR_ENGINE_LOCK = threading.Lock()
+OCR_ENGINE_STATE = {"name": None, "engine": None, "error": None}
 
 
 def utc_now_iso():
@@ -114,6 +117,95 @@ def unpack_sync_entry(entry):
         return entry['data'], updated_at if isinstance(updated_at, str) else None
     return None, None
 
+
+def get_ocr_engine():
+    """按可用性懒加载服务端 OCR 引擎，优先轻量 RapidOCR，其次 PaddleOCR。"""
+    with OCR_ENGINE_LOCK:
+        if OCR_ENGINE_STATE["engine"] is not None:
+            return OCR_ENGINE_STATE["name"], OCR_ENGINE_STATE["engine"]
+        if OCR_ENGINE_STATE["error"] is not None:
+            raise RuntimeError(OCR_ENGINE_STATE["error"])
+
+        errors = []
+        try:
+            from rapidocr_onnxruntime import RapidOCR
+
+            engine = RapidOCR()
+            OCR_ENGINE_STATE.update({"name": "rapidocr_onnxruntime", "engine": engine, "error": None})
+            return OCR_ENGINE_STATE["name"], OCR_ENGINE_STATE["engine"]
+        except Exception as exc:
+            errors.append(f"rapidocr_onnxruntime: {exc}")
+
+        try:
+            from rapidocr import RapidOCR
+
+            engine = RapidOCR()
+            OCR_ENGINE_STATE.update({"name": "rapidocr", "engine": engine, "error": None})
+            return OCR_ENGINE_STATE["name"], OCR_ENGINE_STATE["engine"]
+        except Exception as exc:
+            errors.append(f"rapidocr: {exc}")
+
+        try:
+            from paddleocr import PaddleOCR
+
+            engine = PaddleOCR(use_angle_cls=True, lang="ch")
+            OCR_ENGINE_STATE.update({"name": "paddleocr", "engine": engine, "error": None})
+            return OCR_ENGINE_STATE["name"], OCR_ENGINE_STATE["engine"]
+        except Exception as exc:
+            errors.append(f"paddleocr: {exc}")
+
+        OCR_ENGINE_STATE["error"] = "未安装服务端 OCR 引擎；请安装 rapidocr-onnxruntime 或 paddleocr"
+        raise RuntimeError(OCR_ENGINE_STATE["error"] + "；" + "；".join(errors))
+
+
+def extract_rapidocr_text(result):
+    if isinstance(result, tuple):
+        result = result[0]
+    if hasattr(result, "txts"):
+        return "\n".join(str(text) for text in result.txts if text)
+    if hasattr(result, "texts"):
+        return "\n".join(str(text) for text in result.texts if text)
+    if not result:
+        return ""
+
+    lines = []
+    for item in result:
+        if isinstance(item, (list, tuple)) and len(item) >= 2:
+            lines.append(str(item[1]))
+        elif isinstance(item, dict):
+            text = item.get("text") or item.get("rec_text")
+            if text:
+                lines.append(str(text))
+    return "\n".join(lines)
+
+
+def extract_paddleocr_text(result):
+    lines = []
+
+    def walk(value):
+        if not value:
+            return
+        if isinstance(value, dict):
+            text = value.get("text") or value.get("rec_text")
+            if text:
+                lines.append(str(text))
+            return
+        if isinstance(value, (list, tuple)):
+            if len(value) >= 2 and isinstance(value[1], (list, tuple)) and value[1]:
+                lines.append(str(value[1][0]))
+                return
+            for item in value:
+                walk(item)
+
+    walk(result)
+    return "\n".join(lines)
+
+
+def run_server_ocr(engine_name, engine, image_path):
+    if engine_name == "paddleocr":
+        return extract_paddleocr_text(engine.ocr(image_path, cls=True))
+    return extract_rapidocr_text(engine(image_path))
+
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -124,6 +216,46 @@ def index():
 @app.errorhandler(413)
 def payload_too_large(_):
     return jsonify({"success": False, "error": "请求体过大"}), 413
+
+
+@app.route('/api/ocr/recognize', methods=['POST'])
+def ocr_recognize():
+    image = request.files.get('image')
+    if image is None:
+        return jsonify({"success": False, "error": "缺少截图文件"}), 400
+
+    content = image.read()
+    if not content:
+        return jsonify({"success": False, "error": "截图文件为空"}), 400
+    if len(content) > OCR_MAX_IMAGE_BYTES:
+        return jsonify({"success": False, "error": "截图文件不能超过 8MB"}), 413
+
+    if image.mimetype and not image.mimetype.startswith('image/'):
+        return jsonify({"success": False, "error": "仅支持图片文件"}), 400
+
+    try:
+        engine_name, engine = get_ocr_engine()
+    except RuntimeError as exc:
+        return jsonify({"success": False, "error": str(exc), "fallback": "tesseract"}), 503
+
+    suffix = os.path.splitext(image.filename or '')[1] or '.png'
+    fd, temp_path = tempfile.mkstemp(prefix='fund_ocr_', suffix=suffix)
+    try:
+        with os.fdopen(fd, 'wb') as f:
+            f.write(content)
+
+        text = run_server_ocr(engine_name, engine, temp_path)
+        return jsonify({
+            "success": True,
+            "engine": engine_name,
+            "text": text,
+            "text_length": len(text.strip()),
+        })
+    except Exception:
+        return jsonify({"success": False, "error": "服务端 OCR 识别失败", "fallback": "tesseract"}), 500
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
 
 @app.route('/api/sync/save', methods=['POST'])
 def sync_save():
