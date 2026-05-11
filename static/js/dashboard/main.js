@@ -5,6 +5,7 @@
     document.addEventListener('DOMContentLoaded', () => {
         state.addModal = new bootstrap.Modal(document.getElementById('addModal'));
         state.syncModal = new bootstrap.Modal(document.getElementById('syncModal'));
+        state.importModal = new bootstrap.Modal(document.getElementById('importModal'));
 
         const savedSyncCode = localStorage.getItem('lastSyncCode');
         if (savedSyncCode) document.getElementById('syncCodeInput').value = savedSyncCode;
@@ -24,6 +25,9 @@
         switch (action) {
             case 'open-sync':
                 app.data.openSyncModal();
+                break;
+            case 'open-import':
+                app.ui.openImportModal();
                 break;
             case 'upload-sync':
                 app.data.uploadSyncData();
@@ -49,12 +53,36 @@
             case 'select-group':
                 app.ui.selectGroup(groupName);
                 break;
+            case 'reset-import':
+                app.ui.resetImportModal();
+                break;
+            case 'add-import-selected':
+                app.ui.addImportSelected();
+                break;
+            case 'recalc-import-row':
+                app.ui.recalculateImportCandidate(Number(actionEl.dataset.importIndex));
+                break;
+            case 'sort-group-list':
+                app.ui.sortGroupList(actionEl.dataset.sortKey);
+                break;
             case 'save-fund':
                 app.ui.saveFund();
                 break;
             case 'delete-fund':
                 app.ui.deleteFund();
                 break;
+        }
+    });
+
+    document.addEventListener('change', event => {
+        if (event.target.id === 'importImageInput') {
+            const files = Array.from(event.target.files || []);
+            app.ui.importFromScreenshot(files);
+        }
+
+        if (event.target.classList.contains('import-suggestion')) {
+            const index = Number(event.target.dataset.importIndex);
+            app.ui.applyImportSuggestion(index, event.target.value);
         }
     });
 

@@ -31,6 +31,30 @@
 * **后端**：Python 3, Flask
 * **数据存储**：前端 `localStorage` + 后端轻量级 `JSON` 持久化
 
+## 🧾 截图导入 OCR
+
+截图导入采用“服务端 OCR 优先、浏览器 OCR 兜底”的策略：
+
+1. 前端上传截图到 `/api/ocr/recognize`。
+2. 后端优先调用 RapidOCR/PaddleOCR 识别中文截图。
+3. 前端根据 OCR 文本结合基金代码表做模糊匹配。
+4. 多个候选无法唯一确认时，页面显示候选下拉，避免自动填错基金代码。
+5. 如果服务器未安装 OCR 引擎，自动回退到浏览器端 Tesseract.js。
+
+基础依赖：
+
+```bash
+pip install -r requirements.txt
+```
+
+启用服务端 OCR：
+
+```bash
+pip install -r requirements-ocr.txt
+```
+
+如 PythonAnywhere 环境无法安装 `rapidocr-onnxruntime`，应用仍会自动回退到浏览器 OCR。
+
 ## 📂 目录结构
 
 ```text

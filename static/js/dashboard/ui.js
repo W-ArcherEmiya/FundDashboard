@@ -101,6 +101,7 @@
                         <p class="empty-state-desc">添加基金后，这里会自动汇总资产、分组表现和当日盈亏。你也可以用同步码把数据恢复到当前设备。</p>
                         <div class="empty-state-actions">
                             <button class="action-btn action-btn-primary" data-action="open-add">添加第一笔资产</button>
+                            <button class="action-btn action-btn-secondary" data-action="open-import">截图导入</button>
                             ${restoreAction}
                         </div>
                     </div>
@@ -170,6 +171,7 @@
                         </div>
                         <div class="quick-actions-grid">
                             <button class="action-btn action-btn-primary" data-action="open-add">添加资产</button>
+                            <button class="action-btn action-btn-secondary" data-action="open-import">截图导入</button>
                             <button class="action-btn action-btn-secondary" data-action="open-sync">同步数据</button>
                             <button class="action-btn action-btn-secondary" data-action="refresh-data">刷新净值</button>
                         </div>
@@ -283,19 +285,136 @@
                 </section>`;
         }
 
-        const cardsHtml = groupItems.map(renderFundCard).join('');
+        const sortedItems = sortGroupItems(groupItems);
+        const itemsHtml = sortedItems.map(renderFundListItem).join('');
 
         return `
             <section class="page-shell page-shell-group">
-                <div class="fund-grid">
-                    ${cardsHtml}
-                    <button class="add-tile" data-action="open-add" data-default-group="${utils.escapeHtml(currentGroupName)}">
-                        <span class="add-tile-icon">+</span>
-                        <span class="add-tile-title">添加到 ${utils.escapeHtml(currentGroupName)}</span>
-                        <span class="add-tile-copy">继续扩展这个分组的持仓</span>
-                    </button>
+                <div class="panel fund-list-panel">
+                    <div class="fund-list-head">
+                        <div class="fund-list-head-main">基金</div>
+                        ${renderSortableHead('estNav', '估算/实际净值')}
+                        ${renderSortableHead('dailyProfit', '当日(估)')}
+                        ${renderSortableHead('holdProfit', '持有盈亏')}
+                    </div>
+                    <div class="fund-list">
+                        ${itemsHtml}
+                        <button class="fund-list-add" data-action="open-add" data-default-group="${utils.escapeHtml(currentGroupName)}">
+                            <span class="add-tile-icon">+</span>
+                            <span class="fund-list-add-copy">添加到 ${utils.escapeHtml(currentGroupName)}</span>
+                        </button>
+                    </div>
                 </div>
             </section>`;
+    }
+
+    function renderSortableHead(key, label) {
+        const sort = state.groupListSort || {};
+        const isActive = sort.key === key;
+        const direction = isActive ? sort.direction : 'desc';
+        const title = `${label}${direction === 'asc' ? '升序' : '降序'}`;
+
+        return `
+            <div class="fund-head-sort">
+                <span>${utils.escapeHtml(label)}</span>
+                <button class="fund-sort-btn ${isActive ? 'fund-sort-btn-active' : ''}" data-action="sort-group-list" data-sort-key="${utils.escapeHtml(key)}" title="${utils.escapeHtml(title)}" aria-label="${utils.escapeHtml(title)}">
+                    <span class="sort-triangle sort-triangle-up ${isActive && direction === 'asc' ? 'sort-triangle-active' : ''}" aria-hidden="true"></span>
+                    <span class="sort-triangle sort-triangle-down ${isActive && direction === 'desc' ? 'sort-triangle-active' : ''}" aria-hidden="true"></span>
+                </button>
+            </div>`;
+    }
+
+    function sortGroupItems(items) {
+        const sort = state.groupListSort || {};
+        const key = ['estNav', 'dailyProfit', 'holdProfit'].includes(sort.key) ? sort.key : 'dailyProfit';
+        const direction = sort.direction === 'asc' ? 'asc' : 'desc';
+        const factor = direction === 'asc' ? 1 : -1;
+
+        return [...items].sort((a, b) => {
+            const aValue = Number(a[key]);
+            const bValue = Number(b[key]);
+            const aRank = Number.isFinite(aValue) && a.valid && !a.isLoading && !a.isUnavailable ? 0 : 1;
+            const bRank = Number.isFinite(bValue) && b.valid && !b.isLoading && !b.isUnavailable ? 0 : 1;
+            if (aRank !== bRank) return aRank - bRank;
+            if (aRank === 1) return 0;
+            if (aValue === bValue) return 0;
+            return aValue > bValue ? factor : -factor;
+        });
+    }
+
+    function sortGroupList(key) {
+        const current = state.groupListSort || {};
+        const nextDirection = current.key === key && current.direction === 'desc' ? 'asc' : 'desc';
+        state.groupListSort = { key, direction: nextDirection };
+        app.persistGroupListSort();
+        renderUI(false);
+    }
+
+    function renderFundListItem(item) {
+        if (item.isLoading) {
+            return `
+                <article class="fund-list-row fund-list-row-loading">
+                    <div class="fund-list-main">
+                        <span class="spinner-border spinner-border-sm text-primary"></span>
+                        <span class="loading-text">正在刷新这只基金的最新净值…</span>
+                    </div>
+                </article>`;
+        }
+
+        if (!item.valid) {
+            return `
+                <article class="fund-list-row fund-list-row-error" data-action="open-edit" data-code="${utils.escapeHtml(item.code)}">
+                    <div class="fund-list-main">
+                        <div>
+                            <div class="fund-card-title danger-text">加载失败 ${utils.escapeHtml(item.code)}</div>
+                            <div class="fund-card-subtitle">点击行可检查代码、份额或分组配置。</div>
+                        </div>
+                    </div>
+                    <div class="fund-list-status"><span class="status-pill status-pill-up">异常</span></div>
+                </article>`;
+        }
+
+        if (item.isUnavailable) {
+            return `
+                <article class="fund-list-row fund-list-row-unavailable" data-action="open-edit" data-code="${utils.escapeHtml(item.code)}">
+                    <div class="fund-list-main fund-list-main-wide">
+                        <div>
+                            <div class="fund-card-title">${utils.escapeHtml(item.name)}</div>
+                            <div class="fund-list-total">总金额 暂无数据</div>
+                        </div>
+                    </div>
+                    <div class="fund-list-status"><span class="status-pill status-pill-flat">待更新</span></div>
+                </article>`;
+        }
+
+        const pillClass = item.estRate > 0 ? 'status-pill-up' : (item.estRate < 0 ? 'status-pill-down' : 'status-pill-flat');
+        const badgeText = `${item.isActual ? '实' : '估'} ${utils.formatNumber(item.estRate, true)}%`;
+        const itemClass = item.isBackup ? 'fund-list-row-backup' : '';
+        const navLabel = item.isActual ? '实际净值' : '估算净值';
+        const dailyLabel = item.isActual ? '当日(实)' : '当日(估)';
+
+        return `
+            <article class="fund-list-row ${itemClass}" data-action="open-edit" data-code="${utils.escapeHtml(item.code)}">
+                <div class="fund-list-main">
+                    <div>
+                        <div class="fund-card-title">${utils.escapeHtml(item.name)}</div>
+                        <div class="fund-list-total">总金额 ${renderAmountText(item.totalAsset, { currency: true })}</div>
+                    </div>
+                </div>
+                <div class="fund-list-cell">
+                    <span class="fund-list-label">${navLabel}</span>
+                    <span class="fund-list-value">${item.estNav.toFixed(4)}</span>
+                    <span class="status-pill fund-list-rate ${pillClass}">${badgeText}</span>
+                </div>
+                <div class="fund-list-cell">
+                    <span class="fund-list-label">${dailyLabel}</span>
+                    <span class="fund-list-value ${utils.getColorClass(item.dailyProfit)}">${renderAmountText(item.dailyProfit, { forceSign: true })}</span>
+                </div>
+                <div class="fund-list-cell">
+                    <span class="fund-list-label">持有盈亏</span>
+                    <span class="fund-list-value ${utils.getColorClass(item.holdProfit)}">${renderAmountText(item.holdProfit, { forceSign: true })}</span>
+                </div>
+            </article>`;
     }
 
     function renderFundCard(item) {
@@ -419,6 +538,546 @@
         state.addModal.show();
     }
 
+    function openImportModal() {
+        resetImportModal();
+        state.importModal.show();
+    }
+
+    function resetImportModal() {
+        const input = document.getElementById('importImageInput');
+        const status = document.getElementById('importStatus');
+        const progress = document.getElementById('importProgress');
+        const bar = document.getElementById('importProgressBar');
+        const results = document.getElementById('importResults');
+
+        state.importCandidates = [];
+        state.importAutoUpdatedCount = 0;
+        if (input) input.value = '';
+        if (status) status.textContent = '选择一张或多张截图后识别基金名称、匹配代码，并用金额/净值反推份额。';
+        if (progress) progress.classList.add('d-none');
+        if (bar) bar.style.width = '0%';
+        if (results) {
+            results.innerHTML = '';
+            results.classList.add('d-none');
+        }
+    }
+
+    async function fillSharesFromAmount(code, amount) {
+        const holdingAmount = Number(amount);
+        if (!code || !Number.isFinite(holdingAmount) || holdingAmount <= 0) return false;
+
+        const nav = await app.ocr.fetchLatestNav(code);
+        if (!nav) return false;
+
+        const shares = holdingAmount / nav;
+        return {
+            shares: shares.toFixed(2),
+            nav: nav.toFixed(4)
+        };
+    }
+
+    function inferCostFromProfit(amount, holdProfit, shares) {
+        const amountValue = Number(amount);
+        const profitValue = Number(holdProfit);
+        const sharesValue = Number(shares);
+
+        if (!Number.isFinite(amountValue) || !Number.isFinite(profitValue) || !Number.isFinite(sharesValue) || sharesValue <= 0) {
+            return '';
+        }
+
+        const totalCost = amountValue - profitValue;
+        if (totalCost < 0) return '';
+
+        return (totalCost / sharesValue).toFixed(4);
+    }
+
+    function getDefaultImportGroup() {
+        return state.currentActiveGroup || '默认分组';
+    }
+
+    function getExistingFundByCode(code) {
+        return state.myFunds.find(fund => fund.code === code) || null;
+    }
+
+    function updateExistingFundFromCandidate(candidate) {
+        if (!candidate || !/^\d{6}$/.test(candidate.code || '') || !candidate.shares) return false;
+
+        const index = state.myFunds.findIndex(fund => fund.code === candidate.code);
+        if (index === -1) return false;
+
+        state.myFunds[index] = {
+            ...state.myFunds[index],
+            shares: candidate.shares,
+            cost: candidate.cost !== '' ? candidate.cost : state.myFunds[index].cost
+        };
+        return true;
+    }
+
+    function buildImportSuggestionControl(candidate, index) {
+        const suggestions = Array.isArray(candidate.suggestions) ? candidate.suggestions : [];
+        if (!suggestions.length || /^\d{6}$/.test(candidate.code || '')) return '';
+
+        const options = suggestions.map(suggestion => {
+            const label = `${suggestion.code} ${suggestion.name}`;
+            return `<option value="${utils.escapeHtml(suggestion.code)}">${utils.escapeHtml(label)}</option>`;
+        }).join('');
+
+        return `
+            <div class="import-suggestion-control">
+                <label class="form-label form-label-soft">候选匹配</label>
+                <select class="form-control import-suggestion" data-import-index="${index}">
+                    <option value="">选择候选基金</option>
+                    ${options}
+                </select>
+            </div>`;
+    }
+
+    function buildImportRow(candidate, index) {
+        const group = candidate.group || getDefaultImportGroup();
+        const hasCode = /^\d{6}$/.test(candidate.code || '');
+        const hasSuggestions = Array.isArray(candidate.suggestions) && candidate.suggestions.length > 0 && !hasCode;
+        const disabledNote = candidate.shares
+            ? ''
+            : `<div class="import-row-warning">${hasCode ? '未能反推份额，请检查代码或手动填写。' : (hasSuggestions ? '存在多个相似候选，请选择正确基金。' : '无法匹配基金代码，请输入代码后重新计算份额和成本。')}</div>`;
+        const matchStatus = hasCode ? utils.escapeHtml(candidate.code) : (hasSuggestions ? '待选择候选' : '无法匹配');
+        const existingBadge = candidate.existing ? ' · 已持仓' : '';
+
+        return `
+            <article class="import-row" data-import-index="${index}">
+                <label class="import-row-check">
+                    <input type="checkbox" class="import-select" ${candidate.selected ? 'checked' : ''}>
+                </label>
+                <div class="import-row-main">
+                    <div class="import-row-name">${utils.escapeHtml(candidate.name)}</div>
+                    <div class="import-row-meta">
+                        ${matchStatus}
+                        ${existingBadge}
+                        ${candidate.amount ? ` · 金额 ${utils.escapeHtml(candidate.amount)}` : ''}
+                        ${candidate.holdProfit ? ` · 持有收益 ${utils.escapeHtml(candidate.holdProfit)}` : ''}
+                        ${candidate.nav ? ` · 净值 ${utils.escapeHtml(candidate.nav)}` : ''}
+                    </div>
+                    ${disabledNote}
+                    ${buildImportSuggestionControl(candidate, index)}
+                </div>
+                <div class="import-row-field import-code-field">
+                    <label class="form-label form-label-soft">基金代码</label>
+                    <div class="import-code-control">
+                        <input type="text" inputmode="numeric" maxlength="6" class="form-control import-code" value="${utils.escapeHtml(candidate.code || '')}" placeholder="6位代码">
+                        <button type="button" class="btn btn-light import-recalc-btn" data-action="recalc-import-row" data-import-index="${index}">重算</button>
+                    </div>
+                </div>
+                <div class="import-row-field">
+                    <label class="form-label form-label-soft">份额</label>
+                    <input type="number" class="form-control import-shares" value="${utils.escapeHtml(candidate.shares || '')}" placeholder="手动填写">
+                </div>
+                <div class="import-row-field">
+                    <label class="form-label form-label-soft">成本</label>
+                    <input type="number" class="form-control import-cost" value="${utils.escapeHtml(candidate.cost || '')}" placeholder="选填">
+                </div>
+                <div class="import-row-field">
+                    <label class="form-label form-label-soft">分组</label>
+                    <input type="text" class="form-control import-group" value="${utils.escapeHtml(group)}" placeholder="默认分组">
+                </div>
+            </article>`;
+    }
+
+    function renderImportResults(candidates) {
+        const results = document.getElementById('importResults');
+        if (!results) return;
+        const updatedCount = state.importAutoUpdatedCount || 0;
+        const updatedNote = updatedCount
+            ? `<div class="import-result-note">已更新 ${updatedCount} 只已有基金，并从识别列表移除。</div>`
+            : '';
+
+        if (!candidates.length) {
+            results.innerHTML = `
+                ${updatedNote}
+                <div class="import-empty">${updatedCount ? '本次截图中的基金已处理完。' : '没有识别到可添加的基金。'}</div>`;
+            results.classList.remove('d-none');
+            return;
+        }
+
+        results.innerHTML = `
+            <div class="import-result-head">
+                <div>
+                    <div class="section-title">已读取基金</div>
+                    <div class="section-subtitle">已持仓基金会自动填入原分组；勾选后确认，选中项会按分组处理。</div>
+                </div>
+                <div class="section-meta">${candidates.length} 项</div>
+            </div>
+            ${updatedNote}
+            <div class="import-list">
+                ${candidates.map(buildImportRow).join('')}
+            </div>`;
+        results.classList.remove('d-none');
+    }
+
+    function renderImportDiagnostics(parsed) {
+        const results = document.getElementById('importResults');
+        if (!results) return;
+
+        const text = String(parsed.rawText || '').slice(0, 600);
+        const textBlock = text
+            ? `<pre class="import-debug-text">${utils.escapeHtml(text)}</pre>`
+            : '<div class="import-debug-empty">OCR 没有读出可用文字。</div>';
+
+        results.innerHTML = `
+            <div class="import-debug">
+                <div class="section-title">未读取到可添加基金</div>
+                <div class="section-subtitle">${utils.escapeHtml(parsed.message || '未匹配到基金代码。')}</div>
+                <div class="import-debug-facts">
+                    <div>OCR 文字长度：${utils.escapeHtml(parsed.ocrTextLength || 0)}</div>
+                    <div>代码表状态：${utils.escapeHtml(parsed.catalogError || (parsed.catalogSize ? `已加载 ${parsed.catalogSize} 条` : '未命中'))}</div>
+                </div>
+                ${textBlock}
+            </div>`;
+        results.classList.remove('d-none');
+    }
+
+    async function hydrateImportCandidates(candidates) {
+        const status = document.getElementById('importStatus');
+        const uniqueCandidates = [];
+        const seenCodes = new Set();
+
+        const seenUnmatched = new Set();
+
+        const getMetricKey = candidate => {
+            const amount = Number(candidate.amount);
+            const holdProfit = Number(candidate.holdProfit);
+            if (!Number.isFinite(amount) || !Number.isFinite(holdProfit)) return '';
+            return `${amount.toFixed(2)}|${holdProfit.toFixed(2)}`;
+        };
+
+        candidates.forEach(candidate => {
+            if (candidate.code && seenCodes.has(candidate.code)) return;
+            const metricKey = getMetricKey(candidate);
+            if (candidate.code) {
+                seenCodes.add(candidate.code);
+                for (let index = uniqueCandidates.length - 1; index >= 0; index -= 1) {
+                    const existing = uniqueCandidates[index];
+                    if (!existing.code && metricKey && getMetricKey(existing) === metricKey) {
+                        uniqueCandidates.splice(index, 1);
+                    }
+                }
+            }
+            if (!candidate.code) {
+                if (metricKey && uniqueCandidates.some(existing => existing.code && getMetricKey(existing) === metricKey)) return;
+                const unmatchedKey = [
+                    String(candidate.name || '').replace(/\s+/g, ''),
+                    String(candidate.amount || ''),
+                    String(candidate.holdProfit || '')
+                ].join('|');
+                if (seenUnmatched.has(unmatchedKey)) return;
+                seenUnmatched.add(unmatchedKey);
+            }
+            const existingFund = candidate.code ? getExistingFundByCode(candidate.code) : null;
+            uniqueCandidates.push({
+                code: candidate.code || '',
+                name: candidate.name || (candidate.code ? `基金 ${candidate.code}` : '无法匹配的基金'),
+                amount: candidate.amount || '',
+                holdProfit: candidate.holdProfit || '',
+                type: candidate.type || '',
+                suggestions: Array.isArray(candidate.suggestions) ? candidate.suggestions : [],
+                unmatched: Boolean(candidate.unmatched || !candidate.code),
+                existing: Boolean(existingFund),
+                group: existingFund ? (existingFund.group || '默认分组') : getDefaultImportGroup(),
+                shares: '',
+                cost: '',
+                nav: '',
+                selected: true
+            });
+        });
+
+        for (let index = 0; index < uniqueCandidates.length; index += 1) {
+            const candidate = uniqueCandidates[index];
+            if (status) status.textContent = `正在反推份额 ${index + 1}/${uniqueCandidates.length}`;
+            if (candidate.code) {
+                const inferred = await fillSharesFromAmount(candidate.code, candidate.amount);
+                if (inferred) {
+                    candidate.shares = inferred.shares;
+                    candidate.nav = inferred.nav;
+                    candidate.cost = inferCostFromProfit(candidate.amount, candidate.holdProfit, candidate.shares);
+                }
+            }
+        }
+
+        state.importAutoUpdatedCount = 0;
+        state.importCandidates = uniqueCandidates;
+        renderImportResults(uniqueCandidates);
+        if (status) {
+            const existingCount = uniqueCandidates.filter(candidate => candidate.existing).length;
+            status.textContent = uniqueCandidates.length
+                ? `已读取 ${uniqueCandidates.length} 只基金${existingCount ? `，其中 ${existingCount} 只已持仓并已填入原分组` : ''}`
+                : '没有识别到可添加的基金';
+        }
+    }
+
+    function normalizeImportFiles(input) {
+        return (Array.isArray(input) ? input : [input]).filter(Boolean);
+    }
+
+    function buildCandidatesFromParsed(parsed) {
+        if (parsed.candidates && parsed.candidates.length) return parsed.candidates;
+        if (parsed.code) {
+            return [{
+                code: parsed.code,
+                name: parsed.matchedName || `基金 ${parsed.code}`,
+                amount: parsed.amount || '',
+                holdProfit: parsed.holdProfit || ''
+            }];
+        }
+        return [];
+    }
+
+    function buildBatchImportDiagnostics(parsedResults) {
+        const rawText = parsedResults
+            .map((parsed, index) => `截图 ${index + 1}\n${parsed.rawText || ''}`)
+            .join('\n\n')
+            .slice(0, 1200);
+        const totalTextLength = parsedResults.reduce((sum, parsed) => sum + Number(parsed.ocrTextLength || 0), 0);
+        const catalogSize = parsedResults.find(parsed => parsed.catalogSize)?.catalogSize || '';
+        const catalogError = parsedResults.find(parsed => parsed.catalogError)?.catalogError || '';
+        const messages = parsedResults
+            .map(parsed => parsed.message)
+            .filter(Boolean);
+
+        return {
+            rawText,
+            ocrTextLength: totalTextLength,
+            catalogSize,
+            catalogError,
+            message: messages[0] || '未匹配到可添加的基金。'
+        };
+    }
+
+    async function importFromScreenshot(input) {
+        const files = normalizeImportFiles(input);
+        if (!files.length) return;
+
+        const status = document.getElementById('importStatus');
+        const progress = document.getElementById('importProgress');
+        const bar = document.getElementById('importProgressBar');
+
+        if (files.some(file => !file.type.startsWith('image/'))) {
+            showNotice('请选择图片文件', 'error');
+            resetImportModal();
+            return;
+        }
+
+        if (files.some(file => file.size > 8 * 1024 * 1024)) {
+            showNotice('单张截图文件不能超过 8MB', 'error');
+            resetImportModal();
+            return;
+        }
+
+        status.textContent = files.length > 1 ? `正在识别 1/${files.length}...` : '正在识别...';
+        progress.classList.remove('d-none');
+        bar.style.width = '8%';
+
+        try {
+            const parsedResults = [];
+            const allCandidates = [];
+
+            for (let index = 0; index < files.length; index += 1) {
+                const file = files[index];
+                const parsed = await app.ocr.recognizeBestAlipayScreenshot(file, (percent, label) => {
+                    const currentPercent = Math.max(8, Math.min(100, percent || 0));
+                    const overallPercent = Math.round(((index + currentPercent / 100) / files.length) * 100);
+                    bar.style.width = `${Math.max(8, overallPercent)}%`;
+                    status.textContent = files.length > 1
+                        ? `正在识别 ${index + 1}/${files.length}：${label || `${currentPercent}%`}`
+                        : (label || `正在识别 ${currentPercent}%`);
+                });
+
+                parsedResults.push(parsed);
+                allCandidates.push(...buildCandidatesFromParsed(parsed));
+            }
+
+            bar.style.width = '100%';
+
+            await hydrateImportCandidates(allCandidates);
+
+            if (!state.importCandidates.length) {
+                const diagnostics = buildBatchImportDiagnostics(parsedResults);
+                renderImportDiagnostics(diagnostics);
+                status.textContent = diagnostics.message || '未识别到可填字段';
+                showNotice(diagnostics.message || '未识别到基金代码、份额或成本，请手动填写', 'error', 5000);
+            } else {
+                const engines = [...new Set(parsedResults.map(parsed => parsed.ocrEngine).filter(Boolean))];
+                const engineText = engines.length ? `（${engines.join('、')}）` : '';
+                showNotice(`${files.length > 1 ? '批量截图' : '截图'}读取完成${engineText}，已持仓基金已自动填入原分组`, 'success', 5000);
+            }
+        } catch (error) {
+            console.error('importFromScreenshot failed', error);
+            const message = error && error.message ? error.message : '未知错误';
+            status.textContent = `识别失败：${message}`;
+            showNotice(`截图识别失败：${message}`, 'error', 5000);
+        }
+    }
+
+    function syncImportRowsToState() {
+        const rows = Array.from(document.querySelectorAll('.import-row'));
+        rows.forEach(row => {
+            const index = Number(row.dataset.importIndex);
+            const candidate = state.importCandidates[index];
+            if (!candidate) return;
+
+            candidate.selected = Boolean(row.querySelector('.import-select') && row.querySelector('.import-select').checked);
+            candidate.code = (row.querySelector('.import-code')?.value || '').trim();
+            candidate.shares = (row.querySelector('.import-shares')?.value || '').trim();
+            candidate.cost = (row.querySelector('.import-cost')?.value || '').trim();
+            candidate.group = (row.querySelector('.import-group')?.value || '').trim() || getDefaultImportGroup();
+        });
+    }
+
+    async function applyImportSuggestion(index, code) {
+        syncImportRowsToState();
+
+        const candidate = state.importCandidates[index];
+        if (!candidate || !/^\d{6}$/.test(code || '')) return;
+
+        const suggestion = (candidate.suggestions || []).find(item => item.code === code);
+        if (!suggestion) return;
+
+        candidate.code = suggestion.code;
+        candidate.name = suggestion.name;
+        candidate.type = suggestion.type || candidate.type || '';
+        candidate.unmatched = false;
+        candidate.selected = true;
+
+        const existingFund = getExistingFundByCode(candidate.code);
+        candidate.existing = Boolean(existingFund);
+        if (existingFund) candidate.group = existingFund.group || '默认分组';
+
+        const status = document.getElementById('importStatus');
+        if (status) status.textContent = `正在用 ${candidate.code} 重新计算份额和成本`;
+
+        const inferred = await fillSharesFromAmount(candidate.code, candidate.amount);
+        if (inferred) {
+            candidate.shares = inferred.shares;
+            candidate.nav = inferred.nav;
+            candidate.cost = inferCostFromProfit(candidate.amount, candidate.holdProfit, candidate.shares);
+        }
+
+        renderImportResults(state.importCandidates);
+        if (status) status.textContent = '已选择候选基金';
+        showNotice('已选择候选基金并重新计算', 'success', 3500);
+    }
+
+    async function recalculateImportCandidate(index) {
+        syncImportRowsToState();
+
+        const candidate = state.importCandidates[index];
+        if (!candidate) return;
+
+        const code = String(candidate.code || '').trim();
+        if (!/^\d{6}$/.test(code)) {
+            showNotice('请输入 6 位基金代码后再重算', 'error', 4000);
+            return;
+        }
+
+        if (!candidate.amount || Number.isNaN(Number(candidate.amount)) || Number(candidate.amount) <= 0) {
+            showNotice('截图中没有可用于反推的持有金额', 'error', 4000);
+            return;
+        }
+
+        const status = document.getElementById('importStatus');
+        if (status) status.textContent = `正在用 ${code} 重新计算份额和成本`;
+
+        const inferred = await fillSharesFromAmount(code, candidate.amount);
+        if (!inferred) {
+            showNotice('未能拉取该基金净值，请检查代码是否正确', 'error', 5000);
+            return;
+        }
+
+        candidate.code = code;
+        candidate.unmatched = false;
+        candidate.shares = inferred.shares;
+        candidate.nav = inferred.nav;
+        candidate.cost = inferCostFromProfit(candidate.amount, candidate.holdProfit, candidate.shares);
+        candidate.selected = true;
+        const existingFund = getExistingFundByCode(code);
+        candidate.existing = Boolean(existingFund);
+        if (existingFund) candidate.group = existingFund.group || '默认分组';
+
+        renderImportResults(state.importCandidates);
+        if (status) status.textContent = existingFund ? '已重新计算份额和成本，并填入已有分组' : '已重新计算份额和成本';
+        showNotice(existingFund ? '已重新计算，并填入已有分组' : '已重新计算该基金的份额和成本', 'success', 4000);
+    }
+
+    function addImportSelected() {
+        syncImportRowsToState();
+        const selectedEntries = state.importCandidates
+            .map((candidate, index) => ({ candidate, index }))
+            .filter(entry => entry.candidate.selected);
+        let added = 0;
+        let skipped = 0;
+        let updated = 0;
+        const processedIndexes = new Set();
+
+        if (selectedEntries.length === 0) {
+            showNotice('请先选择要归类的基金', 'error', 5000);
+            return;
+        }
+
+        const defaultGroup = getDefaultImportGroup();
+        const groupSource = selectedEntries.find(entry => entry.candidate.group && entry.candidate.group !== defaultGroup) || selectedEntries[0];
+        const targetGroup = (groupSource.candidate.group || defaultGroup).trim() || '默认分组';
+
+        if (targetGroup.length > 32) {
+            showNotice('分组名称不能超过 32 个字符', 'error', 5000);
+            return;
+        }
+
+        selectedEntries.forEach(({ candidate, index }) => {
+            const code = String(candidate.code || '').trim();
+            const shares = String(candidate.shares || '').trim();
+            const cost = String(candidate.cost || '').trim();
+
+            if (!/^\d{6}$/.test(code) ||
+                shares === '' || Number.isNaN(Number(shares)) || Number(shares) <= 0 ||
+                (cost !== '' && (Number.isNaN(Number(cost)) || Number(cost) < 0))) {
+                skipped += 1;
+                return;
+            }
+
+            if (state.myFunds.some(fund => fund.code === code)) {
+                if (updateExistingFundFromCandidate({ ...candidate, code, shares, cost })) {
+                    updated += 1;
+                    processedIndexes.add(index);
+                } else {
+                    skipped += 1;
+                }
+                return;
+            }
+
+            state.myFunds.push({
+                code,
+                shares,
+                cost,
+                group: targetGroup
+            });
+            added += 1;
+            processedIndexes.add(index);
+        });
+
+        if (added === 0 && updated === 0) {
+            showNotice(skipped > 0 ? '没有可归类的基金，请检查代码、份额或成本' : '请先选择要归类的基金', 'error', 5000);
+            return;
+        }
+
+        state.importCandidates = state.importCandidates.filter((_, index) => !processedIndexes.has(index));
+        if (updated > 0) state.importAutoUpdatedCount = (state.importAutoUpdatedCount || 0) + updated;
+        app.persistFunds();
+        renderUI(true);
+        app.data.refreshNetworkData();
+        renderImportResults(state.importCandidates);
+
+        const status = document.getElementById('importStatus');
+        if (status) status.textContent = state.importCandidates.length ? `剩余 ${state.importCandidates.length} 只待归类基金` : '本次截图中的基金已处理完';
+        showNotice(`已归类 ${added} 只基金到「${targetGroup}」${updated ? `，更新 ${updated} 只已有基金` : ''}${skipped ? `，跳过 ${skipped} 只` : ''}`, 'success', 5000);
+    }
+
     function updateDropdownList() {
         const list = document.getElementById('groupDropdownList');
         const groups = new Set(state.myFunds.map(fund => fund.group || '默认分组'));
@@ -495,9 +1154,16 @@
         showNotice,
         switchTab,
         openAddModal,
+        openImportModal,
+        resetImportModal,
         openEditModal,
         selectGroup,
         saveFund,
-        deleteFund
+        deleteFund,
+        sortGroupList,
+        importFromScreenshot,
+        recalculateImportCandidate,
+        addImportSelected,
+        applyImportSuggestion
     };
 })();
