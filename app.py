@@ -11,6 +11,8 @@ app.config['MAX_CONTENT_LENGTH'] = 9 * 1024 * 1024
 
 # 确保存储文件和你的 app.py 在同一个目录
 DATA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'sync_data.json')
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+RAPIDOCR_MODEL_DIR = os.path.join(BASE_DIR, 'ocr_models', 'rapidocr')
 SYNC_CODE_MAX_LENGTH = 64
 GROUP_MAX_LENGTH = 32
 MAX_FUNDS_PER_SYNC = 500
@@ -18,6 +20,19 @@ OCR_MAX_IMAGE_BYTES = 8 * 1024 * 1024
 DATA_LOCK = threading.Lock()
 OCR_ENGINE_LOCK = threading.Lock()
 OCR_ENGINE_STATE = {"name": None, "engine": None, "error": None}
+
+
+def build_rapidocr_params():
+    """Use bundled OCR models when available to avoid runtime downloads on restricted hosts."""
+    model_paths = {
+        'Det.model_path': os.path.join(RAPIDOCR_MODEL_DIR, 'ch_PP-OCRv4_det_mobile.onnx'),
+        'Cls.model_path': os.path.join(RAPIDOCR_MODEL_DIR, 'ch_ppocr_mobile_v2.0_cls_mobile.onnx'),
+        'Rec.model_path': os.path.join(RAPIDOCR_MODEL_DIR, 'ch_PP-OCRv4_rec_mobile.onnx'),
+        'Rec.rec_keys_path': os.path.join(RAPIDOCR_MODEL_DIR, 'ppocr_keys_v1.txt'),
+    }
+    if all(os.path.exists(path) for path in model_paths.values()):
+        return model_paths
+    return None
 
 
 def utc_now_iso():
@@ -139,7 +154,8 @@ def get_ocr_engine():
         try:
             from rapidocr import RapidOCR
 
-            engine = RapidOCR()
+            params = build_rapidocr_params()
+            engine = RapidOCR(params=params) if params else RapidOCR()
             OCR_ENGINE_STATE.update({"name": "rapidocr", "engine": engine, "error": None})
             return OCR_ENGINE_STATE["name"], OCR_ENGINE_STATE["engine"]
         except Exception as exc:
