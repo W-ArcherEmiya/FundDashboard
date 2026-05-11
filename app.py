@@ -178,9 +178,9 @@ def extract_rapidocr_text(result):
     if isinstance(result, tuple):
         result = result[0]
     if hasattr(result, "txts"):
-        return "\n".join(str(text) for text in result.txts if text)
+        return "\n".join(str(text) for text in (result.txts or []) if text)
     if hasattr(result, "texts"):
-        return "\n".join(str(text) for text in result.texts if text)
+        return "\n".join(str(text) for text in (result.texts or []) if text)
     if not result:
         return ""
 
@@ -268,6 +268,7 @@ def ocr_recognize():
             "text_length": len(text.strip()),
         })
     except Exception:
+        app.logger.exception("Server OCR recognition failed")
         return jsonify({"success": False, "error": "服务端 OCR 识别失败", "fallback": "tesseract"}), 500
     finally:
         if os.path.exists(temp_path):
