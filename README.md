@@ -53,7 +53,9 @@ pip install -r requirements.txt
 pip install -r requirements-ocr.txt
 ```
 
-如 PythonAnywhere 环境无法安装 `rapidocr-onnxruntime`，应用仍会自动回退到浏览器 OCR。
+项目内置了 RapidOCR 需要的 ONNX 模型文件，后端会优先读取 `ocr_models/rapidocr/`，
+避免 PythonAnywhere 等受限环境在运行时访问外部模型下载站点。
+如服务端 OCR 依赖不可用，应用仍会自动回退到浏览器 OCR。
 
 ## 📂 目录结构
 
