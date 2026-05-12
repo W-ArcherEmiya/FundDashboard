@@ -748,7 +748,7 @@
         });
     }
 
-    function fetchLatestNav(code, timeoutMs = 3000) {
+    function fetchPingzhongNav(code, timeoutMs = 3500) {
         return new Promise(resolve => {
             const script = document.createElement('script');
             script.async = true;
@@ -783,6 +783,61 @@
             if (app.utils && app.utils.resetPingzhongGlobals) app.utils.resetPingzhongGlobals();
             document.head.appendChild(script);
         });
+    }
+
+    function fetchFundgzNav(code, timeoutMs = 3500) {
+        return new Promise(resolve => {
+            const script = document.createElement('script');
+            script.async = true;
+            script.src = `https://fundgz.1234567.com.cn/js/${code}.js?rt=${Date.now()}`;
+
+            let finished = false;
+            let timerId = null;
+            const previousJsonpgz = window.jsonpgz;
+
+            const cleanup = () => {
+                if (script.parentNode) script.parentNode.removeChild(script);
+                if (previousJsonpgz === undefined) delete window.jsonpgz;
+                else window.jsonpgz = previousJsonpgz;
+            };
+            const finish = value => {
+                if (finished) return;
+                finished = true;
+                if (timerId) clearTimeout(timerId);
+                cleanup();
+                resolve(value);
+            };
+
+            window.jsonpgz = data => {
+                if (typeof previousJsonpgz === 'function') {
+                    try {
+                        previousJsonpgz(data);
+                    } catch (error) {
+                        console.warn('previous jsonpgz callback failed', error);
+                    }
+                }
+                const nav = Number(data && (data.dwjz || data.gsz));
+                finish(Number.isFinite(nav) && nav > 0 ? nav : null);
+            };
+
+            script.onload = () => {
+                setTimeout(() => finish(null), 0);
+            };
+            script.onerror = () => finish(null);
+
+            timerId = setTimeout(() => finish(null), timeoutMs);
+            document.head.appendChild(script);
+        });
+    }
+
+    async function fetchLatestNav(code) {
+        const pingzhongNav = await fetchPingzhongNav(code);
+        if (pingzhongNav) return pingzhongNav;
+
+        const fundgzNav = await fetchFundgzNav(code);
+        if (fundgzNav) return fundgzNav;
+
+        return null;
     }
 
     function parseAlipayFundText(rawText) {
