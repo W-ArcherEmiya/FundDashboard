@@ -581,7 +581,7 @@
         compact = compact.replace(/^(今日|收益|更新)+/g, '');
         compact = trimToLikelyFundName(compact);
 
-        if (!takeTail) return compact;
+        if (!takeTail) return compact.replace(/[+-]?\d+(?:\.\d+)?$/g, '');
         const tailLength = /纳斯达克|ETF/i.test(compact) ? 28 : 22;
         return compact.length > tailLength ? compact.slice(-tailLength) : compact;
     }
@@ -607,6 +607,9 @@
         if (!suffix || suffix.length > 16) return false;
         if (/^(A|B|C|D|E|I|Y)$/i.test(suffix)) return true;
         if (/^接[ABCDEIY]$/i.test(suffix)) return true;
+        if (/^[合券][ABCDEIY]$/i.test(suffix)) return true;
+        if (/^LOF[ABCDEIY]$/i.test(suffix)) return true;
+        if (/^期?国债$/i.test(suffix)) return true;
         if (/^(QDII|FOF)?[ABCDEIY]$/i.test(suffix)) return true;
         if (/^\d{2,4}(QDII)?FOF[ABCDEIY]$/i.test(suffix)) return true;
         if (/^(ETF)?联接[ABCDEIY]?$/i.test(suffix)) return true;
@@ -624,6 +627,12 @@
             if (normalizedName.endsWith('联接')) return `${name}${splitConnector[1].toUpperCase()}`;
             if (normalizedName.endsWith('联')) return `${name}接${splitConnector[1].toUpperCase()}`;
         }
+        const splitMixed = normalizedSuffix.match(/^合([ABCDEIY])$/i);
+        if (splitMixed && normalizedName.endsWith('混')) return `${name}合${splitMixed[1].toUpperCase()}`;
+
+        const splitBond = normalizedSuffix.match(/^券([ABCDEIY])$/i);
+        if (splitBond && normalizedName.endsWith('债债')) return `${name.slice(0, -1)}${splitBond[1].toUpperCase()}`;
+        if (splitBond && normalizedName.endsWith('债')) return `${name}券${splitBond[1].toUpperCase()}`;
 
         return `${name}${suffix}`;
     }
