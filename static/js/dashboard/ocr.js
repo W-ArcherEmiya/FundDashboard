@@ -571,7 +571,7 @@
             .replace(/今日收益更新/g, '|')
             .replace(/基金财富号|财富号/g, '|')
             .replace(/金选固收[+十]?|金选指数基金/g, '|')
-            .replace(/我的持有|持有收益排序|全部|偏股|偏债|指数|黄金/g, '')
+            .replace(/我的持有|持有收益排序|全部|偏股|偏债|黄金/g, '')
             .replace(/名称|金额|昨日收益|持有收益率|持有收益|基金市场|机会|自选|持有/g, '')
             .replace(/投资锦囊|产品季报|限额即将再下调|投近\d?年跑赢纳指/g, '|')
             .replace(/[^\u4e00-\u9fa5A-Za-z0-9.（）()|]+/g, '');
@@ -608,6 +608,7 @@
         if (/^(A|B|C|D|E|I|Y)$/i.test(suffix)) return true;
         if (/^接[ABCDEIY]$/i.test(suffix)) return true;
         if (/^(QDII|FOF)?[ABCDEIY]$/i.test(suffix)) return true;
+        if (/^\d{2,4}(QDII)?FOF[ABCDEIY]$/i.test(suffix)) return true;
         if (/^(ETF)?联接[ABCDEIY]?$/i.test(suffix)) return true;
         if (/^(混合|债券|股票|指数|配置|主题|联接|ETF联接)(QDII|FOF)?[ABCDEIY]?$/i.test(suffix)) return true;
         if (/(混合|债券|股票|指数|联接|配置|主题|产业|行业|科技|消费|电力|银行|材料|化工|半导体)(QDII|FOF)?[ABCDEIY]$/i.test(suffix)) return true;
