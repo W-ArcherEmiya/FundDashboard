@@ -507,7 +507,7 @@
                 const normalizedName = normalizeFundName(name);
                 const normalizedSuffix = normalizeFundName(suffixAfterHoldProfit);
                 if (normalizedSuffix && !normalizedName.endsWith(normalizedSuffix)) {
-                    name = `${name}${suffixAfterHoldProfit}`;
+                    name = mergeFundNameSuffix(name, suffixAfterHoldProfit);
                 }
             }
             if (!isLikelyHoldingName(name)) return;
@@ -606,12 +606,25 @@
         const suffix = normalizeFundName(value);
         if (!suffix || suffix.length > 16) return false;
         if (/^(A|B|C|D|E|I|Y)$/i.test(suffix)) return true;
+        if (/^接[ABCDEIY]$/i.test(suffix)) return true;
         if (/^(QDII|FOF)?[ABCDEIY]$/i.test(suffix)) return true;
         if (/^(ETF)?联接[ABCDEIY]?$/i.test(suffix)) return true;
         if (/^(混合|债券|股票|指数|配置|主题|联接|ETF联接)(QDII|FOF)?[ABCDEIY]?$/i.test(suffix)) return true;
         if (/(混合|债券|股票|指数|联接|配置|主题|产业|行业|科技|消费|电力|银行|材料|化工|半导体)(QDII|FOF)?[ABCDEIY]$/i.test(suffix)) return true;
         if (/^\(?(QDII|FOF)\)?[ABCDEIY]?$/i.test(suffix)) return true;
         return false;
+    }
+
+    function mergeFundNameSuffix(name, suffix) {
+        const normalizedName = normalizeFundName(name);
+        const normalizedSuffix = normalizeFundName(suffix);
+        const splitConnector = normalizedSuffix.match(/^接([ABCDEIY])$/i);
+        if (splitConnector) {
+            if (normalizedName.endsWith('联接')) return `${name}${splitConnector[1].toUpperCase()}`;
+            if (normalizedName.endsWith('联')) return `${name}接${splitConnector[1].toUpperCase()}`;
+        }
+
+        return `${name}${suffix}`;
     }
 
     function getVariantBaseName(normalizedName) {
