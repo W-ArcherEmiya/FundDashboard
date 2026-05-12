@@ -499,12 +499,16 @@
             if (profits.length < 1 || !rate) return;
 
             const lowerBound = rows.length ? rows[rows.length - 1].end : 0;
-            const holdProfit = profits.length >= 2 ? profits[1] : profits[0];
-            const firstProfitEnd = profits.length >= 2 ? profits[0].end : value.end;
-            let name = repairTruncatedFundName(extractHoldingNameForAmount(source, lowerBound, value.index, firstProfitEnd, holdProfit.index));
-            const classAfterProfit = cleanHoldingNameFragment(source.slice(holdProfit.end, rate.index), false);
-            if (/^(A|B|C|D|E|I|Y)$/i.test(classAfterProfit) && !/(A|B|C|D|E|I|Y)$/i.test(normalizeFundName(name))) {
-                name = `${name}${classAfterProfit.toUpperCase()}`;
+            const holdProfit = profits[0];
+            const nextProfit = profits[1] || rate;
+            let name = repairTruncatedFundName(extractHoldingNameForAmount(source, lowerBound, value.index, value.end, holdProfit.index));
+            const suffixAfterHoldProfit = cleanHoldingNameFragment(source.slice(holdProfit.end, nextProfit.index), false);
+            if (suffixAfterHoldProfit && suffixAfterHoldProfit.length <= 16) {
+                const normalizedName = normalizeFundName(name);
+                const normalizedSuffix = normalizeFundName(suffixAfterHoldProfit);
+                if (normalizedSuffix && !normalizedName.endsWith(normalizedSuffix)) {
+                    name = `${name}${suffixAfterHoldProfit}`;
+                }
             }
             if (!isLikelyHoldingName(name)) return;
 
@@ -699,7 +703,7 @@
         const unsigned = values.filter(item => !/^[+-]/.test(item.raw) && Number(item.number) > 0);
         const profits = values.filter(item => /^[+-]/.test(item.raw));
         const amount = unsigned.find(item => Number(item.number) >= 1) || unsigned[0];
-        const holdProfit = profits[1] || profits[0];
+        const holdProfit = profits[0];
 
         return {
             amount: amount ? amount.number : '',
