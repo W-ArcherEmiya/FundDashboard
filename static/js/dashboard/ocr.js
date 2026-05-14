@@ -224,7 +224,7 @@
 
         const candidates = filterVariantCandidates(Array.from(deduped.values()), normalizedText)
             .slice(0, 8)
-            .map(({ code, name, type, amount, holdProfit }) => ({ code, name, type, amount, holdProfit }));
+            .map(({ code, name, type, amount, holdProfit }) => ({ code, name, type, amount, holdProfit, source: 'text' }));
         return appendUnmatchedHoldingRows(text, candidates);
     }
 
@@ -238,11 +238,17 @@
                 Math.abs(Number(item.holdProfit) - Number(candidate.holdProfit)) < 0.01
             );
             if (!replacement) return candidate;
-            if (replacement.code) return replacement;
+            if (replacement.code) {
+                return {
+                    ...replacement,
+                    source: 'textFallback'
+                };
+            }
             if ((replacement.suggestions || []).length > (candidate.suggestions || []).length) {
                 return {
                     ...candidate,
-                    suggestions: replacement.suggestions
+                    suggestions: replacement.suggestions,
+                    source: 'textCandidate'
                 };
             }
             return candidate;
@@ -260,7 +266,8 @@
                     amount: row.amount,
                     holdProfit: row.holdProfit,
                     suggestions: row.suggestions || [],
-                    unmatched: true
+                    unmatched: true,
+                    source: row.source ? `${row.source}Unmatched` : 'textUnmatched'
                 };
             }
 
@@ -272,7 +279,8 @@
                     amount: row.amount,
                     holdProfit: row.holdProfit,
                     suggestions: match.suggestions,
-                    unmatched: true
+                    unmatched: true,
+                    source: row.source ? `${row.source}Candidate` : 'textCandidate'
                 };
             }
 
@@ -281,7 +289,8 @@
                 name: match.name,
                 type: match.type,
                 amount: row.amount,
-                holdProfit: row.holdProfit
+                holdProfit: row.holdProfit,
+                source: row.source || 'text'
             };
         });
     }
@@ -633,7 +642,8 @@
                 type: '',
                 amount: row.amount,
                 holdProfit: row.holdProfit,
-                unmatched: true
+                unmatched: true,
+                source: row.source ? `${row.source}Unmatched` : 'textUnmatched'
             });
             usedAmounts.push(amount);
         });
