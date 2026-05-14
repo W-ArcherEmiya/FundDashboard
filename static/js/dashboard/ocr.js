@@ -180,7 +180,17 @@
         return fundCatalogPromise;
     }
 
-    function findFundCandidates(text, catalog) {
+    function findFundCandidates(text, catalog, ocrBlocks) {
+        const structuredRows = extractHoldingRowsFromBlocks(ocrBlocks);
+        if (structuredRows.length > 0) {
+            const structuredCandidates = findCandidatesFromHoldingRows(structuredRows, catalog);
+            if (structuredCandidates.every(candidate => candidate.code)) return structuredCandidates;
+
+            const fallbackRows = extractHoldingRows(text);
+            const fallbackCandidates = fallbackRows.length > 0 ? findCandidatesFromHoldingRows(fallbackRows, catalog) : [];
+            return mergeLayoutAndTextCandidates(structuredCandidates, fallbackCandidates);
+        }
+
         const rows = extractHoldingRows(text);
         if (rows.length > 0) {
             return findCandidatesFromHoldingRows(rows, catalog);
@@ -216,6 +226,27 @@
             .slice(0, 8)
             .map(({ code, name, type, amount, holdProfit }) => ({ code, name, type, amount, holdProfit }));
         return appendUnmatchedHoldingRows(text, candidates);
+    }
+
+    function mergeLayoutAndTextCandidates(layoutCandidates, textCandidates) {
+        if (!Array.isArray(textCandidates) || textCandidates.length === 0) return layoutCandidates;
+
+        return layoutCandidates.map(candidate => {
+            if (candidate.code) return candidate;
+            const replacement = textCandidates.find(item =>
+                Math.abs(Number(item.amount) - Number(candidate.amount)) < 0.01 &&
+                Math.abs(Number(item.holdProfit) - Number(candidate.holdProfit)) < 0.01
+            );
+            if (!replacement) return candidate;
+            if (replacement.code) return replacement;
+            if ((replacement.suggestions || []).length > (candidate.suggestions || []).length) {
+                return {
+                    ...candidate,
+                    suggestions: replacement.suggestions
+                };
+            }
+            return candidate;
+        });
     }
 
     function findCandidatesFromHoldingRows(rows, catalog) {
@@ -293,6 +324,146 @@
         }
 
         return buildAmbiguousMatch(topMatches);
+    }
+
+    function normalizeOcrBlock(block) {
+        if (!block || !block.text) return null;
+        const left = Number(block.left);
+        const top = Number(block.top);
+        const right = Number(block.right);
+        const bottom = Number(block.bottom);
+        if (![left, top, right, bottom].every(Number.isFinite)) return null;
+
+        return {
+            text: String(block.text || '').trim(),
+            left,
+            top,
+            right,
+            bottom,
+            width: right - left,
+            height: bottom - top,
+            cx: Number.isFinite(Number(block.cx)) ? Number(block.cx) : (left + right) / 2,
+            cy: Number.isFinite(Number(block.cy)) ? Number(block.cy) : (top + bottom) / 2,
+            score: Number(block.score)
+        };
+    }
+
+    function extractHoldingRowsFromBlocks(rawBlocks) {
+        const blocks = (Array.isArray(rawBlocks) ? rawBlocks : [])
+            .map(normalizeOcrBlock)
+            .filter(Boolean)
+            .filter(block => block.text);
+        if (blocks.length < 8) return [];
+
+        const nameHeader = findBlockByText(blocks, /^名称$/);
+        const amountHeader = findBlockByText(blocks, /金额\s*\/?\s*昨日收益/);
+        const profitHeader = findBlockByText(blocks, /持有收益\s*\/?\s*率/);
+        if (!amountHeader || !profitHeader) return [];
+
+        const headerBottom = Math.max(
+            nameHeader ? nameHeader.bottom : 0,
+            amountHeader.bottom,
+            profitHeader.bottom
+        );
+        const maxRight = Math.max(...blocks.map(block => block.right));
+        const leftColumnRight = amountHeader.left - 18;
+        const middleColumnLeft = amountHeader.left - Math.max(80, maxRight * 0.06);
+        const middleColumnRight = profitHeader.left - Math.max(35, maxRight * 0.03);
+        const rightColumnLeft = profitHeader.left - Math.max(45, maxRight * 0.04);
+
+        const contentBlocks = blocks
+            .filter(block => block.cy > headerBottom + 8)
+            .filter(block => !isCoordinateNoiseText(block.text));
+        const amountBlocks = contentBlocks
+            .filter(block => block.cx >= middleColumnLeft && block.cx < middleColumnRight)
+            .filter(block => isAmountAnchorText(block.text))
+            .sort((a, b) => a.cy - b.cy);
+        if (amountBlocks.length === 0) return [];
+
+        const rows = [];
+        amountBlocks.forEach((amountBlock, index) => {
+            const previous = amountBlocks[index - 1];
+            const next = amountBlocks[index + 1];
+            const rowStart = previous ? (previous.cy + amountBlock.cy) / 2 : headerBottom;
+            const rowEnd = next ? (amountBlock.cy + next.cy) / 2 : amountBlock.cy + estimateRowHeight(amountBlocks, index);
+            const rowBlocks = contentBlocks.filter(block => block.cy >= rowStart && block.cy < rowEnd);
+
+            const name = repairTruncatedFundName(cleanHoldingNameFragment(
+                rowBlocks
+                    .filter(block => block.cx < leftColumnRight)
+                    .filter(block => isLikelyCoordinateNameText(block.text))
+                    .sort((a, b) => a.top - b.top || a.left - b.left)
+                    .map(block => block.text)
+                    .join(''),
+                false
+            ));
+            if (!isLikelyHoldingName(name)) return;
+
+            const holdProfitBlock = rowBlocks
+                .filter(block => block.cx >= rightColumnLeft)
+                .filter(block => isSignedNumberText(block.text) && !isPercentText(block.text))
+                .sort((a, b) => Math.abs(a.cy - amountBlock.cy) - Math.abs(b.cy - amountBlock.cy))[0];
+            const holdProfit = normalizeNumber(holdProfitBlock && holdProfitBlock.text);
+            if (!holdProfit) return;
+
+            rows.push({
+                name,
+                truncated: /\.\.\.|…/.test(name),
+                amount: normalizeNumber(amountBlock.text),
+                holdProfit,
+                index: amountBlock.top,
+                end: rowEnd,
+                source: 'layout'
+            });
+        });
+
+        return rows.length >= 1 ? rows : [];
+    }
+
+    function findBlockByText(blocks, pattern) {
+        return blocks.find(block => pattern.test(block.text));
+    }
+
+    function estimateRowHeight(amountBlocks, index) {
+        const gaps = amountBlocks
+            .slice(1)
+            .map((block, blockIndex) => block.cy - amountBlocks[blockIndex].cy)
+            .filter(gap => Number.isFinite(gap) && gap > 80);
+        const sorted = gaps.slice().sort((a, b) => a - b);
+        const medianGap = sorted.length ? sorted[Math.floor(sorted.length / 2)] : 260;
+        return Math.max(150, Math.min(360, medianGap * 0.58));
+    }
+
+    function isAmountAnchorText(text) {
+        if (!/^\d[\d,，]*(?:\.\d{2})?$/.test(String(text || '').trim())) return false;
+        const amount = Number(normalizeNumber(text));
+        return Number.isFinite(amount) && amount >= 1;
+    }
+
+    function isSignedNumberText(text) {
+        return /^[+-]\d[\d,，]*(?:\.\d+)?$/.test(String(text || '').trim());
+    }
+
+    function isPercentText(text) {
+        return /%/.test(String(text || ''));
+    }
+
+    function isCoordinateNoiseText(text) {
+        const value = String(text || '').trim();
+        if (!value) return true;
+        if (/财富号|基金经理说|市场解读|投资锦囊|产品季报/.test(value)) return true;
+        if (/更多产品|销售服务|法律文件|收益数据仅供参考|过往业绩|市场有风险|页面由/.test(value)) return true;
+        if (/^(基金市场|机会|自选|持有|全部|偏股|偏债|指数|黄金|全|名称|金额\/昨日收益|持有收益\/率)$/.test(value)) return true;
+        return false;
+    }
+
+    function isLikelyCoordinateNameText(text) {
+        const value = String(text || '').trim();
+        if (!value || isCoordinateNoiseText(value)) return false;
+        if (/^定投$|^金选|指数基金/.test(value)) return false;
+        if (isAmountAnchorText(value) || isSignedNumberText(value) || isPercentText(value)) return false;
+        if (/^[A-Z]$/i.test(value)) return true;
+        return /[\u4e00-\u9fa5A-Za-z0-9（）()]/.test(value);
     }
 
     function buildAmbiguousMatch(matches) {
@@ -863,8 +1034,9 @@
         return null;
     }
 
-    function parseAlipayFundText(rawText) {
+    function parseAlipayFundText(rawText, ocrBlocks) {
         const text = normalizeOcrText(rawText);
+        const blocks = Array.isArray(ocrBlocks) ? ocrBlocks : [];
 
         if (looksLikeHoldingsList(text) && !hasDetailFields(text)) {
             return {
@@ -874,6 +1046,7 @@
                 candidates: [],
                 pageType: 'holdingsList',
                 rawText: text,
+                ocrBlocks: blocks,
                 message: '这是持有列表页，已尝试按名称匹配基金代码。'
             };
         }
@@ -887,6 +1060,7 @@
             candidates: [],
             pageType: hasDetailFields(filteredText) ? 'fundDetail' : 'unknown',
             rawText: filteredText,
+            ocrBlocks: blocks,
             message: ''
         };
     }
@@ -906,7 +1080,7 @@
             };
         }
 
-        const candidates = findFundCandidates(parsed.rawText || '', catalog);
+        const candidates = findFundCandidates(parsed.rawText || '', catalog, parsed.ocrBlocks);
         const enriched = { ...parsed, candidates, catalogSize: catalog.length };
 
         if (candidates.length === 1) {
@@ -959,7 +1133,7 @@
 
         if (typeof onProgress === 'function') onProgress(80, `服务端 OCR 已完成：${payload.engine || 'server'}`);
         const rawText = payload.text || '';
-        const parsed = parseAlipayFundText(rawText);
+        const parsed = parseAlipayFundText(rawText, payload.blocks || []);
         const enriched = await enrichFundCandidates(parsed);
         return {
             ...enriched,
