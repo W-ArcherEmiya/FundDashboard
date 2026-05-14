@@ -174,6 +174,144 @@ def get_ocr_engine():
         raise RuntimeError(OCR_ENGINE_STATE["error"] + "；" + "；".join(errors))
 
 
+def normalize_ocr_box(box):
+    points = []
+    try:
+        for point in box:
+            if len(point) < 2:
+                continue
+            points.append([float(point[0]), float(point[1])])
+    except TypeError:
+        return None
+
+    if not points:
+        return None
+
+    xs = [point[0] for point in points]
+    ys = [point[1] for point in points]
+    left = min(xs)
+    top = min(ys)
+    right = max(xs)
+    bottom = max(ys)
+    return {
+        "points": points,
+        "left": left,
+        "top": top,
+        "right": right,
+        "bottom": bottom,
+        "width": right - left,
+        "height": bottom - top,
+        "cx": (left + right) / 2,
+        "cy": (top + bottom) / 2,
+    }
+
+
+def make_ocr_block(text, box=None, score=None):
+    text = str(text or "").strip()
+    if not text:
+        return None
+
+    block = {"text": text}
+    normalized_box = normalize_ocr_box(box) if box is not None else None
+    if normalized_box:
+        block.update(normalized_box)
+    if score is not None:
+        try:
+            block["score"] = float(score)
+        except (TypeError, ValueError):
+            pass
+    return block
+
+
+def extract_rapidocr_blocks(result):
+    if isinstance(result, tuple):
+        result = result[0]
+    if result is None:
+        return []
+
+    if hasattr(result, "txts") and hasattr(result, "boxes"):
+        txts = getattr(result, "txts", None) or []
+        boxes = getattr(result, "boxes", None)
+        scores = getattr(result, "scores", None) or []
+        if boxes is None:
+            return []
+        return [
+            block for block in (
+                make_ocr_block(text, box, scores[index] if index < len(scores) else None)
+                for index, (text, box) in enumerate(zip(txts, boxes))
+            )
+            if block
+        ]
+
+    blocks = []
+    for item in result:
+        if isinstance(item, (list, tuple)) and len(item) >= 2:
+            box = item[0]
+            text = None
+            score = None
+            if isinstance(item[1], (list, tuple)) and item[1]:
+                text = item[1][0]
+                score = item[1][1] if len(item[1]) > 1 else None
+            else:
+                text = item[1]
+                score = item[2] if len(item) > 2 else None
+            block = make_ocr_block(text, box, score)
+            if block:
+                blocks.append(block)
+        elif isinstance(item, dict):
+            block = make_ocr_block(
+                item.get("text") or item.get("rec_text"),
+                item.get("box") or item.get("points") or item.get("dt_box"),
+                item.get("score") or item.get("confidence") or item.get("rec_score")
+            )
+            if block:
+                blocks.append(block)
+    return blocks
+
+
+def extract_paddleocr_blocks(result):
+    blocks = []
+
+    def walk(value):
+        if not value:
+            return
+        if isinstance(value, dict):
+            block = make_ocr_block(
+                value.get("text") or value.get("rec_text"),
+                value.get("box") or value.get("points") or value.get("dt_box"),
+                value.get("score") or value.get("confidence") or value.get("rec_score")
+            )
+            if block:
+                blocks.append(block)
+            return
+        if isinstance(value, (list, tuple)):
+            if len(value) >= 2 and isinstance(value[1], (list, tuple)) and value[1]:
+                block = make_ocr_block(
+                    value[1][0],
+                    value[0],
+                    value[1][1] if len(value[1]) > 1 else None
+                )
+                if block:
+                    blocks.append(block)
+                return
+            for item in value:
+                walk(item)
+
+    walk(result)
+    return blocks
+
+
+def extract_ocr_payload(engine_name, result):
+    blocks = extract_paddleocr_blocks(result) if engine_name == "paddleocr" else extract_rapidocr_blocks(result)
+    if blocks:
+        text = "\n".join(block["text"] for block in blocks if block.get("text"))
+        return text, blocks
+
+    if engine_name == "paddleocr":
+        return extract_paddleocr_text(result), []
+    return extract_rapidocr_text(result), []
+
+
 def extract_rapidocr_text(result):
     if isinstance(result, tuple):
         result = result[0]
@@ -219,8 +357,8 @@ def extract_paddleocr_text(result):
 
 def run_server_ocr(engine_name, engine, image_path):
     if engine_name == "paddleocr":
-        return extract_paddleocr_text(engine.ocr(image_path, cls=True))
-    return extract_rapidocr_text(engine(image_path))
+        return extract_ocr_payload(engine_name, engine.ocr(image_path, cls=True))
+    return extract_ocr_payload(engine_name, engine(image_path))
 
 @app.route('/')
 def index():
@@ -260,11 +398,12 @@ def ocr_recognize():
         with os.fdopen(fd, 'wb') as f:
             f.write(content)
 
-        text = run_server_ocr(engine_name, engine, temp_path)
+        text, blocks = run_server_ocr(engine_name, engine, temp_path)
         return jsonify({
             "success": True,
             "engine": engine_name,
             "text": text,
+            "blocks": blocks,
             "text_length": len(text.strip()),
         })
     except Exception:
