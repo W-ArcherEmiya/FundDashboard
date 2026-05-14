@@ -632,6 +632,21 @@
             </div>`;
     }
 
+    function getImportSourceLabel(candidate) {
+        const source = String(candidate && candidate.source || '');
+        if (source === 'layout') return '坐标解析';
+        if (source === 'text') return '文本兜底';
+        if (source === 'textFallback') return '文本回填';
+        if (source === 'layoutCandidate') return '坐标候选';
+        if (source === 'textCandidate') return '文本候选';
+        if (source === 'layoutUnmatched') return '坐标未匹配';
+        if (source === 'textUnmatched') return '文本未匹配';
+        if (source === 'selectedCandidate') return '手选候选';
+        if (source === 'manualCode') return '手动代码';
+        if (source === 'detail') return '详情页';
+        return '';
+    }
+
     function buildImportRow(candidate, index) {
         const group = candidate.group || getDefaultImportGroup();
         const hasCode = /^\d{6}$/.test(candidate.code || '');
@@ -641,6 +656,8 @@
             : `<div class="import-row-warning">${hasCode ? '未能反推份额，请检查代码或手动填写。' : (hasSuggestions ? '存在多个相似候选，请选择正确基金。' : '无法匹配基金代码，请输入代码后重新计算份额和成本。')}</div>`;
         const matchStatus = hasCode ? utils.escapeHtml(candidate.code) : (hasSuggestions ? '待选择候选' : '无法匹配');
         const existingBadge = candidate.existing ? ' · 已持仓' : '';
+        const sourceLabel = getImportSourceLabel(candidate);
+        const sourceBadge = sourceLabel ? `<span class="import-source-badge">${utils.escapeHtml(sourceLabel)}</span>` : '';
 
         return `
             <article class="import-row" data-import-index="${index}">
@@ -648,7 +665,10 @@
                     <input type="checkbox" class="import-select" ${candidate.selected ? 'checked' : ''}>
                 </label>
                 <div class="import-row-main">
-                    <div class="import-row-name">${utils.escapeHtml(candidate.name)}</div>
+                    <div class="import-row-title">
+                        <div class="import-row-name">${utils.escapeHtml(candidate.name)}</div>
+                        ${sourceBadge}
+                    </div>
                     <div class="import-row-meta">
                         ${matchStatus}
                         ${existingBadge}
@@ -778,6 +798,7 @@
                 holdProfit: candidate.holdProfit || '',
                 type: candidate.type || '',
                 suggestions: Array.isArray(candidate.suggestions) ? candidate.suggestions : [],
+                source: candidate.source || '',
                 unmatched: Boolean(candidate.unmatched || !candidate.code),
                 existing: Boolean(existingFund),
                 group: existingFund ? (existingFund.group || '默认分组') : getDefaultImportGroup(),
@@ -823,7 +844,8 @@
                 code: parsed.code,
                 name: parsed.matchedName || `基金 ${parsed.code}`,
                 amount: parsed.amount || '',
-                holdProfit: parsed.holdProfit || ''
+                holdProfit: parsed.holdProfit || '',
+                source: 'detail'
             }];
         }
         return [];
@@ -943,6 +965,7 @@
         candidate.name = suggestion.name;
         candidate.type = suggestion.type || candidate.type || '';
         candidate.unmatched = false;
+        candidate.source = 'selectedCandidate';
         candidate.selected = true;
 
         const existingFund = getExistingFundByCode(candidate.code);
@@ -992,6 +1015,7 @@
 
         candidate.code = code;
         candidate.unmatched = false;
+        candidate.source = 'manualCode';
         candidate.shares = inferred.shares;
         candidate.nav = inferred.nav;
         candidate.cost = inferCostFromProfit(candidate.amount, candidate.holdProfit, candidate.shares);

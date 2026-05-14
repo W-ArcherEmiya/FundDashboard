@@ -1199,11 +1199,32 @@ button {
     min-width: 0;
 }
 
+.import-row-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    flex-wrap: wrap;
+}
+
 .import-row-name {
     color: var(--lark-text-title);
     font-size: 14px;
     font-weight: 700;
     line-height: 1.35;
+}
+
+.import-source-badge {
+    display: inline-flex;
+    align-items: center;
+    min-height: 20px;
+    border-radius: 999px;
+    background: #EEF4FF;
+    color: var(--brand-blue);
+    padding: 2px 8px;
+    font-size: 11px;
+    line-height: 1.2;
+    white-space: nowrap;
 }
 
 .import-row-meta,
