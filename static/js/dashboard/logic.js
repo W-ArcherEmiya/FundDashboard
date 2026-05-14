@@ -119,6 +119,8 @@
                 isActual = true;
             }
 
+            const holdNav = isActual ? currentNav : hist.latest;
+
             return {
                 code: fund.code,
                 group: fund.group,
@@ -126,7 +128,7 @@
                 estRate: rate,
                 estNav: currentNav,
                 dailyProfit: (currentNav - prevNav) * shares,
-                holdProfit: cost > 0 ? (currentNav - cost) * shares : 0,
+                holdProfit: cost > 0 ? (holdNav - cost) * shares : 0,
                 totalAsset: currentNav * shares,
                 gztime: timeStr,
                 isActual,
@@ -135,15 +137,18 @@
             };
         }
 
+        const rtNav = parseFloat(rt.gsz);
+        const previousNav = parseFloat(rt.dwjz);
+
         return {
             code: fund.code,
             group: fund.group,
             name: rt.name,
             estRate: parseFloat(rt.gszzl),
-            estNav: parseFloat(rt.gsz),
-            dailyProfit: (parseFloat(rt.gsz) - parseFloat(rt.dwjz)) * shares,
-            holdProfit: cost > 0 ? (parseFloat(rt.gsz) - cost) * shares : 0,
-            totalAsset: parseFloat(rt.gsz) * shares,
+            estNav: rtNav,
+            dailyProfit: (rtNav - previousNav) * shares,
+            holdProfit: cost > 0 ? (previousNav - cost) * shares : 0,
+            totalAsset: rtNav * shares,
             gztime: rt.gztime,
             isActual: false,
             isBackup: false,

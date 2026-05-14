@@ -60,6 +60,7 @@ runTest('buildFundResult prefers realtime estimate during daytime session', () =
     assert.equal(result.isBackup, false);
     assert.equal(result.estNav, 1.15);
     assertAlmostEqual(result.dailyProfit, 0.5);
+    assertAlmostEqual(result.holdProfit, -1);
     assert.equal(result.totalAsset, 11.5);
 });
 
@@ -100,7 +101,7 @@ runTest('buildFundResult returns fallback realtime snapshot when historical data
     assert.equal(result.isActual, false);
     assert.equal(result.isBackup, false);
     assertAlmostEqual(result.dailyProfit, 0.4);
-    assertAlmostEqual(result.holdProfit, 1.2);
+    assertAlmostEqual(result.holdProfit, 0.8);
 });
 
 runTest('buildFundResult returns unavailable state when neither realtime nor historical data exists', () => {
