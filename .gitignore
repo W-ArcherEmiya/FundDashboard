@@ -5,3 +5,5 @@ sync_data.json
 .tmp/
 flask-dev.log
 tests/.tmp_sync_data.json
+tests/.tmp_exports/
+exports/*.csv

@@ -141,6 +141,57 @@
         await downloadSyncData({ syncCode: lastSyncCode, skipConfirm: true });
     }
 
+    function buildExportRows() {
+        return (state.myFunds || []).map((fund, index) => {
+            const result = (state.cachedResults || [])[index] || {};
+            return {
+                code: fund.code || result.code || '',
+                name: result.name || fund.name || '',
+                shares: fund.shares || '',
+                cost: fund.cost || '',
+                group: fund.group || '默认分组',
+                nav: Number.isFinite(result.estNav) ? result.estNav : '',
+                totalAsset: Number.isFinite(result.totalAsset) ? result.totalAsset : '',
+                dailyProfit: Number.isFinite(result.dailyProfit) ? result.dailyProfit : '',
+                holdProfit: Number.isFinite(result.holdProfit) ? result.holdProfit : '',
+                navTime: result.gztime || ''
+            };
+        });
+    }
+
+    async function exportAnalysisCsv() {
+        const rows = buildExportRows();
+        if (rows.length === 0) {
+            app.ui.showNotice('没有可导出的基金数据', 'error');
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/export/funds-analysis', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ rows })
+            });
+            const payload = await response.json();
+            if (!payload.success) {
+                app.ui.showNotice('导出失败：' + (payload.error || '服务端异常'), 'error', 5000);
+                return;
+            }
+
+            const link = document.createElement('a');
+            link.href = payload.download_url;
+            link.download = payload.filename;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+
+            app.ui.showNotice(`已生成 ${payload.path}，共 ${payload.rows} 条`, 'success', 5000);
+        } catch (error) {
+            console.error('exportAnalysisCsv failed', error);
+            app.ui.showNotice('导出失败，网络连接异常', 'error', 5000);
+        }
+    }
+
     function fetchPingzhong(code, timeoutMs = HIST_TIMEOUT_MS) {
         return new Promise(resolve => {
             utils.resetPingzhongGlobals();
@@ -261,6 +312,7 @@
         uploadSyncData,
         downloadSyncData,
         restoreLastSyncData,
+        exportAnalysisCsv,
         refreshNetworkData
     };
 })();

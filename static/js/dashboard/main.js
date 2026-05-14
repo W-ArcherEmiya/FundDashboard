@@ -38,6 +38,9 @@
             case 'restore-sync':
                 app.data.restoreLastSyncData();
                 break;
+            case 'export-analysis-csv':
+                app.data.exportAnalysisCsv();
+                break;
             case 'refresh-data':
                 app.data.refreshNetworkData();
                 break;
