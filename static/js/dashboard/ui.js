@@ -174,6 +174,7 @@
                             <button class="action-btn action-btn-secondary" data-action="open-import">截图导入</button>
                             <button class="action-btn action-btn-secondary" data-action="open-sync">同步数据</button>
                             <button class="action-btn action-btn-secondary" data-action="refresh-data">刷新净值</button>
+                            <button class="action-btn action-btn-secondary" data-action="export-analysis-csv">导出表格</button>
                         </div>
                     </div>
                     <div class="panel fact-panel">

@@ -1,4 +1,6 @@
 import os
+import shutil
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -8,16 +10,22 @@ import app as fund_app
 class FundDashboardAppTests(unittest.TestCase):
     def setUp(self):
         self.original_data_file = fund_app.DATA_FILE
+        self.original_export_dir = fund_app.EXPORT_DIR
         self.test_data_file = Path(__file__).resolve().parent / '.tmp_sync_data.json'
+        self.test_export_dir = Path(tempfile.mkdtemp(prefix='funddashboard_exports_'))
         if self.test_data_file.exists():
             self.test_data_file.unlink()
         fund_app.DATA_FILE = str(self.test_data_file)
+        fund_app.EXPORT_DIR = str(self.test_export_dir)
         self.client = fund_app.app.test_client()
 
     def tearDown(self):
         fund_app.DATA_FILE = self.original_data_file
+        fund_app.EXPORT_DIR = self.original_export_dir
         if self.test_data_file.exists():
             self.test_data_file.unlink()
+        if self.test_export_dir.exists():
+            shutil.rmtree(self.test_export_dir, ignore_errors=True)
 
     def test_normalize_sync_code_rejects_empty_and_too_long_values(self):
         self.assertIsNone(fund_app.normalize_sync_code('   '))
@@ -110,6 +118,42 @@ class FundDashboardAppTests(unittest.TestCase):
 
     def test_ocr_recognize_rejects_missing_image(self):
         response = self.client.post('/api/ocr/recognize', data={})
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(response.get_json()['success'])
+
+    def test_export_funds_analysis_creates_downloadable_csv(self):
+        response = self.client.post('/api/export/funds-analysis', json={
+            'rows': [{
+                'code': '6479',
+                'name': '测试基金',
+                'shares': '100',
+                'cost': '1.2',
+                'group': '稳健',
+                'nav': '1.5',
+                'totalAsset': '150',
+                'dailyProfit': '-1.25',
+                'holdProfit': '30',
+                'navTime': '实际净值 (05-14)'
+            }]
+        })
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload['success'])
+        self.assertEqual(payload['rows'], 1)
+        self.assertTrue((self.test_export_dir / payload['filename']).exists())
+
+        download_response = self.client.get(payload['download_url'])
+        self.assertEqual(download_response.status_code, 200)
+        csv_text = download_response.get_data(as_text=True)
+        download_response.close()
+        self.assertIn('code,name,shares,cost,group,nav,totalAsset,dailyProfit,holdProfit,navTime', csv_text)
+        self.assertIn('"=""006479"""', csv_text)
+        self.assertIn('测试基金', csv_text)
+
+    def test_export_funds_analysis_rejects_empty_rows(self):
+        response = self.client.post('/api/export/funds-analysis', json={'rows': []})
 
         self.assertEqual(response.status_code, 400)
         self.assertFalse(response.get_json()['success'])

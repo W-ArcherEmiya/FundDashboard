@@ -1,5 +1,6 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, send_from_directory
 from datetime import datetime, timezone
+import csv
 import json
 import os
 import re
@@ -12,14 +13,29 @@ app.config['MAX_CONTENT_LENGTH'] = 9 * 1024 * 1024
 # 确保存储文件和你的 app.py 在同一个目录
 DATA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'sync_data.json')
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+EXPORT_DIR = os.path.join(BASE_DIR, 'exports')
 RAPIDOCR_MODEL_DIR = os.path.join(BASE_DIR, 'ocr_models', 'rapidocr')
 SYNC_CODE_MAX_LENGTH = 64
 GROUP_MAX_LENGTH = 32
 MAX_FUNDS_PER_SYNC = 500
+MAX_EXPORT_ROWS = 1000
+MAX_EXPORT_FILES = 30
 OCR_MAX_IMAGE_BYTES = 8 * 1024 * 1024
 DATA_LOCK = threading.Lock()
 OCR_ENGINE_LOCK = threading.Lock()
 OCR_ENGINE_STATE = {"name": None, "engine": None, "error": None}
+EXPORT_FIELDS = [
+    'code',
+    'name',
+    'shares',
+    'cost',
+    'group',
+    'nav',
+    'totalAsset',
+    'dailyProfit',
+    'holdProfit',
+    'navTime',
+]
 
 
 def build_rapidocr_params():
@@ -37,6 +53,66 @@ def build_rapidocr_params():
 
 def utc_now_iso():
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00', 'Z')
+
+
+def safe_text_cell(value):
+    text = '' if value is None else str(value).strip()
+    if text and text[0] in ('=', '+', '-', '@'):
+        return "'" + text
+    return text
+
+
+def excel_code_cell(value):
+    code = '' if value is None else str(value).strip()
+    if re.fullmatch(r'\d{1,6}', code):
+        return f'="{code.zfill(6)}"'
+    return safe_text_cell(code)
+
+
+def normalize_export_rows(value):
+    if not isinstance(value, list):
+        return None, "rows 必须是数组"
+    if not value:
+        return None, "没有可导出的基金数据"
+    if len(value) > MAX_EXPORT_ROWS:
+        return None, f"单次最多导出 {MAX_EXPORT_ROWS} 条数据"
+
+    rows = []
+    for index, item in enumerate(value):
+        if not isinstance(item, dict):
+            return None, f"第 {index + 1} 行数据格式错误"
+
+        rows.append({
+            'code': excel_code_cell(item.get('code')),
+            'name': safe_text_cell(item.get('name')),
+            'shares': str(item.get('shares', '')).strip(),
+            'cost': str(item.get('cost', '')).strip(),
+            'group': safe_text_cell(item.get('group') or '默认分组'),
+            'nav': str(item.get('nav', '')).strip(),
+            'totalAsset': str(item.get('totalAsset', '')).strip(),
+            'dailyProfit': str(item.get('dailyProfit', '')).strip(),
+            'holdProfit': str(item.get('holdProfit', '')).strip(),
+            'navTime': safe_text_cell(item.get('navTime')),
+        })
+
+    return rows, None
+
+
+def prune_old_exports():
+    if not os.path.isdir(EXPORT_DIR):
+        return
+
+    files = []
+    for name in os.listdir(EXPORT_DIR):
+        if re.fullmatch(r'funds-analysis-\d{8}-\d{6}-\d{6}\.csv', name):
+            path = os.path.join(EXPORT_DIR, name)
+            files.append((os.path.getmtime(path), path))
+
+    for _, path in sorted(files, reverse=True)[MAX_EXPORT_FILES:]:
+        try:
+            os.remove(path)
+        except OSError:
+            app.logger.warning("Failed to remove old export file: %s", path)
 
 
 def normalize_sync_code(value):
@@ -412,6 +488,46 @@ def ocr_recognize():
     finally:
         if os.path.exists(temp_path):
             os.remove(temp_path)
+
+
+@app.route('/api/export/funds-analysis', methods=['POST'])
+def export_funds_analysis():
+    req = request.get_json(silent=True)
+    if not isinstance(req, dict):
+        return jsonify({"success": False, "error": "请求体必须是 JSON 对象"}), 400
+
+    rows, error = normalize_export_rows(req.get('rows'))
+    if error:
+        return jsonify({"success": False, "error": error}), 400
+
+    try:
+        os.makedirs(EXPORT_DIR, exist_ok=True)
+        filename = f"funds-analysis-{datetime.now().strftime('%Y%m%d-%H%M%S-%f')}.csv"
+        path = os.path.join(EXPORT_DIR, filename)
+        with open(path, 'w', encoding='utf-8-sig', newline='') as f:
+            writer = csv.DictWriter(f, fieldnames=EXPORT_FIELDS)
+            writer.writeheader()
+            writer.writerows(rows)
+        prune_old_exports()
+    except OSError:
+        app.logger.exception("Failed to export funds analysis CSV")
+        return jsonify({"success": False, "error": "生成导出文件失败"}), 500
+
+    return jsonify({
+        "success": True,
+        "filename": filename,
+        "path": f"exports/{filename}",
+        "download_url": f"/exports/{filename}",
+        "rows": len(rows),
+    })
+
+
+@app.route('/exports/<filename>', methods=['GET'])
+def download_export(filename):
+    if not re.fullmatch(r'funds-analysis-\d{8}-\d{6}-\d{6}\.csv', filename):
+        return jsonify({"success": False, "error": "导出文件名无效"}), 404
+    return send_from_directory(EXPORT_DIR, filename, as_attachment=True, download_name=filename)
+
 
 @app.route('/api/sync/save', methods=['POST'])
 def sync_save():
