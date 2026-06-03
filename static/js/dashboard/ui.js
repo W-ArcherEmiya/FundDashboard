@@ -592,6 +592,27 @@
         return (totalCost / sharesValue).toFixed(4);
     }
 
+    function storeCandidateSnapshotOverride(code, candidate) {
+        const amount = Number(candidate && candidate.amount);
+        const holdProfit = Number(candidate && candidate.holdProfit);
+        if (!/^\d{6}$/.test(code || '') || !Number.isFinite(amount) || !Number.isFinite(holdProfit)) return;
+
+        state.syncSnapshotOverrides = state.syncSnapshotOverrides || {};
+        state.syncSnapshotOverrides[code] = {
+            ...(state.syncSnapshotOverrides[code] || {}),
+            totalAsset: amount,
+            holdProfit,
+            updatedAt: new Date().toISOString()
+        };
+        app.persistSyncSnapshotOverrides();
+    }
+
+    function clearSnapshotOverride(code) {
+        if (!/^\d{6}$/.test(code || '') || !state.syncSnapshotOverrides || !state.syncSnapshotOverrides[code]) return;
+        delete state.syncSnapshotOverrides[code];
+        app.persistSyncSnapshotOverrides();
+    }
+
     function getDefaultImportGroup() {
         return state.currentActiveGroup || '默认分组';
     }
@@ -1068,6 +1089,7 @@
 
             if (state.myFunds.some(fund => fund.code === code)) {
                 if (updateExistingFundFromCandidate({ ...candidate, code, shares, cost })) {
+                    storeCandidateSnapshotOverride(code, candidate);
                     updated += 1;
                     processedIndexes.add(index);
                 } else {
@@ -1082,6 +1104,7 @@
                 cost,
                 group: targetGroup
             });
+            storeCandidateSnapshotOverride(code, candidate);
             added += 1;
             processedIndexes.add(index);
         });
@@ -1147,6 +1170,7 @@
             return;
         }
 
+        const oldCode = index >= 0 && state.myFunds[index] ? state.myFunds[index].code : '';
         const newFund = { code, shares, cost, group };
         if (index === -1) {
             if (state.myFunds.some(fund => fund.code === code)) {
@@ -1158,6 +1182,8 @@
             state.myFunds[index] = newFund;
         }
 
+        clearSnapshotOverride(oldCode);
+        clearSnapshotOverride(code);
         app.persistFunds();
         state.addModal.hide();
         renderUI(true);
@@ -1166,7 +1192,10 @@
 
     function deleteFund() {
         if (confirm('确定删除这笔资产？')) {
-            state.myFunds.splice(document.getElementById('editIndex').value, 1);
+            const index = Number(document.getElementById('editIndex').value);
+            const fund = state.myFunds[index];
+            if (fund) clearSnapshotOverride(fund.code);
+            state.myFunds.splice(index, 1);
             app.persistFunds();
             state.addModal.hide();
             renderUI(true);

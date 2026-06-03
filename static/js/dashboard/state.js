@@ -8,6 +8,7 @@
         currentActiveGroup: null,
         groupListSort: JSON.parse(localStorage.getItem('groupListSort_v1') || '{"key":"dailyProfit","direction":"desc"}'),
         summaryFoldOpenGroups: JSON.parse(localStorage.getItem('summaryFoldOpen_v1') || '[]'),
+        syncSnapshotOverrides: JSON.parse(localStorage.getItem('syncSnapshotOverrides_v1') || '{}'),
         addModal: null,
         syncModal: null,
         importModal: null,
@@ -32,5 +33,9 @@
 
     app.persistGroupListSort = () => {
         localStorage.setItem('groupListSort_v1', JSON.stringify(app.state.groupListSort));
+    };
+
+    app.persistSyncSnapshotOverrides = () => {
+        localStorage.setItem('syncSnapshotOverrides_v1', JSON.stringify(app.state.syncSnapshotOverrides || {}));
     };
 })();

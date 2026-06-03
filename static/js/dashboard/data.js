@@ -7,6 +7,7 @@
     const HIST_TIMEOUT_MS = 2500;
     const HIST_RENDER_BATCH_SIZE = 5;
     const HIST_FETCH_CONCURRENCY = 6;
+    const SYNC_OVERRIDE_FIELDS = ['totalAsset', 'holdProfit'];
 
     function loadHistCache() {
         try {
@@ -47,6 +48,20 @@
         saveHistCache(cache);
     }
 
+    function mergeSyncOverride(result) {
+        if (!result || !result.code) return result;
+
+        const override = state.syncSnapshotOverrides && state.syncSnapshotOverrides[result.code];
+        if (!override) return result;
+
+        const merged = { ...result, hasSyncOverride: true };
+        SYNC_OVERRIDE_FIELDS.forEach(field => {
+            const value = Number(override[field]);
+            if (Number.isFinite(value)) merged[field] = value;
+        });
+        return merged;
+    }
+
     function applyResults(results, shouldRender = true) {
         state.cachedResults = results;
         if (shouldRender) app.ui.renderUI(false);
@@ -64,7 +79,18 @@
 
         return (state.myFunds || []).map((fund, index) => {
             const direct = (state.cachedResults || [])[index];
-            const result = direct && direct.code === fund.code ? direct : cachedByCode.get(fund.code);
+            const override = state.syncSnapshotOverrides && state.syncSnapshotOverrides[fund.code];
+            const fallback = override ? {
+                code: fund.code,
+                group: fund.group || '默认分组',
+                name: `基金 ${fund.code}`,
+                gztime: '截图快照',
+                valid: true,
+                isActual: true,
+                isBackup: true,
+                dailyProfit: 0
+            } : null;
+            const result = mergeSyncOverride((direct && direct.code === fund.code ? direct : cachedByCode.get(fund.code)) || fallback);
             if (!result || result.isLoading) return null;
 
             const snapshot = {
@@ -93,11 +119,24 @@
         snapshot.forEach(item => {
             if (item && item.code) snapshotByCode.set(item.code, item);
         });
+        state.syncSnapshotOverrides = state.syncSnapshotOverrides || {};
 
         const results = (funds || []).map((fund, index) => {
             const direct = snapshot[index];
             const item = direct && direct.code === fund.code ? direct : snapshotByCode.get(fund.code);
             if (!item) return null;
+            const override = {};
+            SYNC_OVERRIDE_FIELDS.forEach(field => {
+                const value = Number(item[field]);
+                if (Number.isFinite(value)) override[field] = value;
+            });
+            if (Object.keys(override).length) {
+                state.syncSnapshotOverrides[fund.code] = {
+                    ...state.syncSnapshotOverrides[fund.code],
+                    ...override,
+                    updatedAt: new Date().toISOString()
+                };
+            }
 
             return {
                 ...item,
@@ -110,6 +149,7 @@
 
         if (!results.some(Boolean)) return false;
         state.cachedResults = results;
+        app.persistSyncSnapshotOverrides();
         return true;
     }
 
@@ -329,7 +369,7 @@
             const newCachedResults = state.myFunds.map(fund => {
                 const cachedHist = getCachedHist(fund.code);
                 const rt = tempResults[fund.code];
-                return logic.buildFundResult(fund, cachedHist, rt);
+                return mergeSyncOverride(logic.buildFundResult(fund, cachedHist, rt));
             });
             applyResults(newCachedResults);
 
@@ -347,7 +387,7 @@
                 histories.forEach(({ index, fund, hist }) => {
                     const rt = tempResults[fund.code];
                     if (hist) setCachedHist(fund.code, hist);
-                    newCachedResults[index] = logic.buildFundResult(fund, hist || getCachedHist(fund.code), rt);
+                    newCachedResults[index] = mergeSyncOverride(logic.buildFundResult(fund, hist || getCachedHist(fund.code), rt));
                 });
 
                 updatedCount += histories.length;
