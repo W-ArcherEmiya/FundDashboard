@@ -1,6 +1,7 @@
 (() => {
     const app = window.FundDashboard = window.FundDashboard || {};
     const { state } = app;
+    const AUTO_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 
     document.addEventListener('DOMContentLoaded', () => {
         state.addModal = new bootstrap.Modal(document.getElementById('addModal'));
@@ -12,7 +13,7 @@
 
         if (state.myFunds.length > 0) app.ui.renderUI(true);
         app.data.refreshNetworkData();
-        setInterval(app.data.refreshNetworkData, 60000);
+        setInterval(() => app.data.refreshNetworkData({ allowQueue: false }), AUTO_REFRESH_INTERVAL_MS);
     });
 
     document.addEventListener('click', event => {

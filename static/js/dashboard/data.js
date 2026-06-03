@@ -6,6 +6,7 @@
     const ESTIMATE_WAIT_MS = 4000;
     const HIST_TIMEOUT_MS = 2500;
     const HIST_RENDER_BATCH_SIZE = 5;
+    const HIST_FETCH_CONCURRENCY = 6;
 
     function loadHistCache() {
         try {
@@ -286,9 +287,10 @@
         });
     }
 
-    async function refreshNetworkData() {
+    async function refreshNetworkData(options = {}) {
+        const { allowQueue = true } = options;
         if (state.refreshInFlight) {
-            state.refreshPending = true;
+            if (allowQueue) state.refreshPending = true;
             return;
         }
 
@@ -332,18 +334,26 @@
             applyResults(newCachedResults);
 
             let updatedCount = 0;
-            for (let i = 0; i < state.myFunds.length; i++) {
-                const fund = state.myFunds[i];
-                const hist = await fetchPingzhong(fund.code);
-                const rt = tempResults[fund.code];
-                if (hist) setCachedHist(fund.code, hist);
+            for (let offset = 0; offset < state.myFunds.length; offset += HIST_FETCH_CONCURRENCY) {
+                const batch = state.myFunds.slice(offset, offset + HIST_FETCH_CONCURRENCY);
+                const histories = await Promise.all(batch.map((fund, batchIndex) => (
+                    fetchPingzhong(fund.code).then(hist => ({
+                        index: offset + batchIndex,
+                        fund,
+                        hist
+                    }))
+                )));
 
-                newCachedResults[i] = logic.buildFundResult(fund, hist || getCachedHist(fund.code), rt);
-                updatedCount += 1;
+                histories.forEach(({ index, fund, hist }) => {
+                    const rt = tempResults[fund.code];
+                    if (hist) setCachedHist(fund.code, hist);
+                    newCachedResults[index] = logic.buildFundResult(fund, hist || getCachedHist(fund.code), rt);
+                });
 
-                bar.style.width = `${40 + ((i + 1) / state.myFunds.length) * 60}%`;
+                updatedCount += histories.length;
+                bar.style.width = `${40 + (updatedCount / state.myFunds.length) * 60}%`;
 
-                if (updatedCount % HIST_RENDER_BATCH_SIZE === 0 || i === state.myFunds.length - 1) {
+                if (updatedCount % HIST_RENDER_BATCH_SIZE === 0 || updatedCount >= state.myFunds.length) {
                     applyResults([...newCachedResults]);
                 }
             }
