@@ -43,7 +43,7 @@
                 app.data.exportAnalysisCsv();
                 break;
             case 'refresh-data':
-                app.data.refreshNetworkData();
+                app.data.refreshNetworkData({ forceHist: true });
                 break;
             case 'switch-tab':
                 app.ui.switchTab(tabId, groupName);

@@ -16,6 +16,7 @@
         importAutoUpdatedCount: 0,
         refreshInFlight: false,
         refreshPending: false,
+        refreshPendingOptions: null,
         noticeTimer: null
     };
 

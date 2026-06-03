@@ -3,6 +3,7 @@
     const { state, utils, logic } = app;
     const HIST_CACHE_KEY = 'fundHistCache_v1';
     const HIST_CACHE_TTL_MS = 36 * 60 * 60 * 1000;
+    const HIST_REVALIDATE_MS = 6 * 60 * 60 * 1000;
     const ESTIMATE_WAIT_MS = 4000;
     const HIST_TIMEOUT_MS = 2500;
     const HIST_RENDER_BATCH_SIZE = 5;
@@ -25,7 +26,7 @@
         localStorage.setItem(HIST_CACHE_KEY, JSON.stringify(cache));
     }
 
-    function getCachedHist(code) {
+    function getHistCacheEntry(code) {
         const cache = loadHistCache();
         const entry = cache[code];
         if (!entry || typeof entry !== 'object') return null;
@@ -33,10 +34,16 @@
         if ('value' in entry) {
             const cachedAt = Number(entry.cachedAt) || 0;
             if (!cachedAt || Date.now() - cachedAt > HIST_CACHE_TTL_MS) return null;
-            return entry.value && typeof entry.value === 'object' ? entry.value : null;
+            const value = entry.value && typeof entry.value === 'object' ? entry.value : null;
+            return value ? { value, cachedAt } : null;
         }
 
-        return entry;
+        return { value: entry, cachedAt: 0 };
+    }
+
+    function getCachedHist(code) {
+        const entry = getHistCacheEntry(code);
+        return entry ? entry.value : null;
     }
 
     function setCachedHist(code, hist) {
@@ -46,6 +53,16 @@
             cachedAt: Date.now()
         };
         saveHistCache(cache);
+    }
+
+    function shouldFetchHist(code, forceHist = false) {
+        if (forceHist) return true;
+
+        const entry = getHistCacheEntry(code);
+        if (!entry || !entry.value) return true;
+        if (!entry.cachedAt) return true;
+
+        return Date.now() - entry.cachedAt > HIST_REVALIDATE_MS;
     }
 
     function mergeSyncOverride(result) {
@@ -328,9 +345,15 @@
     }
 
     async function refreshNetworkData(options = {}) {
-        const { allowQueue = true } = options;
+        const { allowQueue = true, forceHist = false } = options;
         if (state.refreshInFlight) {
-            if (allowQueue) state.refreshPending = true;
+            if (allowQueue) {
+                state.refreshPending = true;
+                state.refreshPendingOptions = {
+                    ...(state.refreshPendingOptions || {}),
+                    forceHist: Boolean((state.refreshPendingOptions || {}).forceHist || forceHist)
+                };
+            }
             return;
         }
 
@@ -373,12 +396,23 @@
             });
             applyResults(newCachedResults);
 
+            const histJobs = state.myFunds
+                .map((fund, index) => ({ fund, index }))
+                .filter(({ fund }) => shouldFetchHist(fund.code, forceHist));
+
+            if (histJobs.length === 0) {
+                state.cachedResults = newCachedResults;
+                bar.style.width = '100%';
+                app.ui.renderUI(false);
+                return;
+            }
+
             let updatedCount = 0;
-            for (let offset = 0; offset < state.myFunds.length; offset += HIST_FETCH_CONCURRENCY) {
-                const batch = state.myFunds.slice(offset, offset + HIST_FETCH_CONCURRENCY);
-                const histories = await Promise.all(batch.map((fund, batchIndex) => (
+            for (let offset = 0; offset < histJobs.length; offset += HIST_FETCH_CONCURRENCY) {
+                const batch = histJobs.slice(offset, offset + HIST_FETCH_CONCURRENCY);
+                const histories = await Promise.all(batch.map(({ fund, index }) => (
                     fetchPingzhong(fund.code).then(hist => ({
-                        index: offset + batchIndex,
+                        index,
                         fund,
                         hist
                     }))
@@ -391,9 +425,9 @@
                 });
 
                 updatedCount += histories.length;
-                bar.style.width = `${40 + (updatedCount / state.myFunds.length) * 60}%`;
+                bar.style.width = `${40 + (updatedCount / histJobs.length) * 60}%`;
 
-                if (updatedCount % HIST_RENDER_BATCH_SIZE === 0 || updatedCount >= state.myFunds.length) {
+                if (updatedCount % HIST_RENDER_BATCH_SIZE === 0 || updatedCount >= histJobs.length) {
                     applyResults([...newCachedResults]);
                 }
             }
@@ -410,8 +444,10 @@
             state.refreshInFlight = false;
             setTimeout(() => { bar.style.width = '0%'; }, 500);
             if (state.refreshPending) {
+                const pendingOptions = state.refreshPendingOptions || {};
                 state.refreshPending = false;
-                refreshNetworkData();
+                state.refreshPendingOptions = null;
+                refreshNetworkData(pendingOptions);
             }
         }
     }
