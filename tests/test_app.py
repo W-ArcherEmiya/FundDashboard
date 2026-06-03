@@ -63,11 +63,26 @@ class FundDashboardAppTests(unittest.TestCase):
                 'data': [
                     {'code': '000001', 'shares': '1.5', 'cost': '1.2', 'group': '稳健'},
                     {'code': '000002', 'shares': '2', 'cost': '', 'group': ''}
+                ],
+                'snapshot': [
+                    {
+                        'code': '000001',
+                        'group': '稳健',
+                        'name': '测试基金',
+                        'estNav': 1.23,
+                        'dailyProfit': 2.5,
+                        'holdProfit': 3.5,
+                        'totalAsset': 184.5,
+                        'gztime': '截图快照',
+                        'valid': True,
+                    },
+                    None
                 ]
             }
         )
         self.assertEqual(save_response.status_code, 200)
         self.assertTrue(save_response.get_json()['success'])
+        self.assertEqual(save_response.get_json()['snapshot_count'], 1)
 
         load_response = self.client.get('/api/sync/load/159357')
         self.assertEqual(load_response.status_code, 200)
@@ -75,6 +90,10 @@ class FundDashboardAppTests(unittest.TestCase):
         self.assertTrue(payload['success'])
         self.assertEqual(len(payload['data']), 2)
         self.assertEqual(payload['data'][1]['group'], '默认分组')
+        self.assertEqual(payload['snapshot'][0]['code'], '000001')
+        self.assertEqual(payload['snapshot'][0]['estNav'], 1.23)
+        self.assertTrue(payload['snapshot'][0]['isSyncSnapshot'])
+        self.assertIsNone(payload['snapshot'][1])
         self.assertIn('updated_at', payload)
 
     def test_sync_load_supports_legacy_list_payload(self):
@@ -90,6 +109,7 @@ class FundDashboardAppTests(unittest.TestCase):
         payload = response.get_json()
         self.assertTrue(payload['success'])
         self.assertEqual(payload['data'][0]['code'], '000001')
+        self.assertEqual(payload['snapshot'], [])
         self.assertIsNone(payload['updated_at'])
 
     def test_sync_save_rejects_invalid_json_shape(self):

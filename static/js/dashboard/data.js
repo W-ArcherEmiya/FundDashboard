@@ -55,6 +55,63 @@
         state.syncModal.show();
     }
 
+    function buildSyncSnapshot() {
+        const cachedByCode = new Map();
+        (state.cachedResults || []).forEach(item => {
+            if (item && item.code) cachedByCode.set(item.code, item);
+        });
+
+        return (state.myFunds || []).map((fund, index) => {
+            const direct = (state.cachedResults || [])[index];
+            const result = direct && direct.code === fund.code ? direct : cachedByCode.get(fund.code);
+            if (!result || result.isLoading) return null;
+
+            const snapshot = {
+                code: fund.code,
+                group: fund.group || '默认分组',
+                name: result.name || '',
+                gztime: result.gztime || '',
+                valid: result.valid !== false,
+                isActual: Boolean(result.isActual),
+                isBackup: Boolean(result.isBackup),
+                isUnavailable: Boolean(result.isUnavailable)
+            };
+
+            ['estRate', 'estNav', 'dailyProfit', 'holdProfit', 'totalAsset'].forEach(field => {
+                if (Number.isFinite(result[field])) snapshot[field] = result[field];
+            });
+
+            return snapshot;
+        });
+    }
+
+    function applySyncSnapshot(snapshot, funds) {
+        if (!Array.isArray(snapshot) || !snapshot.length) return false;
+
+        const snapshotByCode = new Map();
+        snapshot.forEach(item => {
+            if (item && item.code) snapshotByCode.set(item.code, item);
+        });
+
+        const results = (funds || []).map((fund, index) => {
+            const direct = snapshot[index];
+            const item = direct && direct.code === fund.code ? direct : snapshotByCode.get(fund.code);
+            if (!item) return null;
+
+            return {
+                ...item,
+                code: fund.code,
+                group: fund.group || item.group || '默认分组',
+                valid: item.valid !== false,
+                isSyncSnapshot: true
+            };
+        });
+
+        if (!results.some(Boolean)) return false;
+        state.cachedResults = results;
+        return true;
+    }
+
     async function uploadSyncData() {
         const code = document.getElementById('syncCodeInput').value.trim();
         if (!code) {
@@ -74,7 +131,7 @@
             const response = await fetch('/api/sync/save', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ sync_code: code, data: state.myFunds })
+                body: JSON.stringify({ sync_code: code, data: state.myFunds, snapshot: buildSyncSnapshot() })
             });
             const resData = await response.json();
             if (resData.success) {
@@ -115,10 +172,12 @@
                 localStorage.setItem('lastSyncCode', code);
                 if (resData.updated_at) localStorage.setItem('lastSyncUpdatedAt', resData.updated_at);
                 const syncTime = resData.updated_at ? `，云端更新时间 ${utils.formatSyncTime(resData.updated_at)}` : '';
-                app.ui.showNotice(`云端数据已同步到本地${syncTime}`, 'success', 4000);
+                const hasSnapshot = applySyncSnapshot(resData.snapshot, state.myFunds);
+                if (!hasSnapshot) state.cachedResults = [];
+                app.ui.showNotice(`云端数据已同步到本地${syncTime}${hasSnapshot ? '，已恢复云端快照' : ''}`, 'success', 4000);
                 state.syncModal.hide();
-                app.ui.renderUI(true);
-                refreshNetworkData();
+                app.ui.renderUI(!hasSnapshot);
+                if (!hasSnapshot) refreshNetworkData();
             } else {
                 app.ui.showNotice('下载失败：' + resData.message, 'error', 4000);
             }
