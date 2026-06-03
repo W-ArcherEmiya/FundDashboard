@@ -18,6 +18,7 @@ RAPIDOCR_MODEL_DIR = os.path.join(BASE_DIR, 'ocr_models', 'rapidocr')
 SYNC_CODE_MAX_LENGTH = 64
 GROUP_MAX_LENGTH = 32
 MAX_FUNDS_PER_SYNC = 500
+MAX_SYNC_SNAPSHOT_ITEMS = 500
 MAX_EXPORT_ROWS = 1000
 MAX_EXPORT_FILES = 30
 OCR_MAX_IMAGE_BYTES = 8 * 1024 * 1024
@@ -173,6 +174,63 @@ def validate_funds_data(value):
 
     return normalized, None
 
+
+def normalize_snapshot_number(value):
+    if value in (None, ''):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if number == number and abs(number) != float('inf') else None
+
+
+def validate_sync_snapshot(value, funds_data):
+    """Normalize optional display snapshot data stored alongside synced holdings."""
+    if value in (None, ''):
+        return [], None
+    if not isinstance(value, list):
+        return None, "snapshot 必须是数组"
+    if len(value) > MAX_SYNC_SNAPSHOT_ITEMS:
+        return None, f"单次最多同步 {MAX_SYNC_SNAPSHOT_ITEMS} 条快照"
+
+    funds_by_code = {fund['code']: fund for fund in funds_data}
+    normalized = []
+    for index, item in enumerate(value):
+        if item is None:
+            normalized.append(None)
+            continue
+        if not isinstance(item, dict):
+            return None, f"第 {index + 1} 条快照格式错误"
+
+        code = str(item.get('code', '')).strip()
+        if not re.fullmatch(r'\d{6}', code):
+            return None, f"第 {index + 1} 条快照基金代码无效"
+        if code not in funds_by_code:
+            return None, f"第 {index + 1} 条快照基金不在持仓列表中"
+
+        snapshot = {
+            'code': code,
+            'group': funds_by_code[code].get('group') or str(item.get('group', '默认分组')).strip() or '默认分组',
+            'name': str(item.get('name', '')).strip()[:80],
+            'gztime': str(item.get('gztime', '')).strip()[:40],
+            'valid': bool(item.get('valid', True)),
+            'isActual': bool(item.get('isActual', False)),
+            'isBackup': bool(item.get('isBackup', False)),
+            'isUnavailable': bool(item.get('isUnavailable', False)),
+            'isSyncSnapshot': True,
+        }
+
+        for field in ('estRate', 'estNav', 'dailyProfit', 'holdProfit', 'totalAsset'):
+            number = normalize_snapshot_number(item.get(field))
+            if number is not None:
+                snapshot[field] = number
+
+        normalized.append(snapshot)
+
+    return normalized, None
+
+
 def load_data():
     """读取本地 JSON 数据文件"""
     if os.path.exists(DATA_FILE):
@@ -202,11 +260,12 @@ def save_data(data):
 def unpack_sync_entry(entry):
     """兼容旧版 list 存储和新版带元数据的对象存储。"""
     if isinstance(entry, list):
-        return entry, None
+        return entry, None, []
     if isinstance(entry, dict) and isinstance(entry.get('data'), list):
         updated_at = entry.get('updated_at')
-        return entry['data'], updated_at if isinstance(updated_at, str) else None
-    return None, None
+        snapshot = entry.get('snapshot') if isinstance(entry.get('snapshot'), list) else []
+        return entry['data'], updated_at if isinstance(updated_at, str) else None, snapshot
+    return None, None, []
 
 
 def get_ocr_engine():
@@ -544,6 +603,10 @@ def sync_save():
     if error:
         return jsonify({"success": False, "error": error}), 400
 
+    snapshot_data, snapshot_error = validate_sync_snapshot(req.get('snapshot'), funds_data)
+    if snapshot_error:
+        return jsonify({"success": False, "error": snapshot_error}), 400
+
     updated_at = utc_now_iso()
 
     try:
@@ -551,6 +614,7 @@ def sync_save():
             db = load_data()
             db[sync_code] = {
                 "data": funds_data,
+                "snapshot": snapshot_data,
                 "updated_at": updated_at,
             }
             save_data(db)
@@ -562,6 +626,7 @@ def sync_save():
         "message": "上传成功",
         "updated_at": updated_at,
         "count": len(funds_data),
+        "snapshot_count": len([item for item in snapshot_data if item]),
     })
 
 @app.route('/api/sync/load/<sync_code>', methods=['GET'])
@@ -573,11 +638,12 @@ def sync_load(sync_code):
 
     db = load_data()
     if sync_code in db:
-        funds_data, updated_at = unpack_sync_entry(db[sync_code])
+        funds_data, updated_at, snapshot_data = unpack_sync_entry(db[sync_code])
         if funds_data is not None:
             return jsonify({
                 "success": True,
                 "data": funds_data,
+                "snapshot": snapshot_data,
                 "updated_at": updated_at,
             })
         return jsonify({"success": False, "message": "同步数据格式异常，请重新上传"}), 500

@@ -1,5 +1,6 @@
 import subprocess
 import sys
+import os
 from pathlib import Path
 
 
@@ -12,9 +13,13 @@ COMMANDS = [
 
 
 def main():
+    env = os.environ.copy()
+    env.setdefault("PYTHONUTF8", "1")
+    env.setdefault("PYTHONIOENCODING", "utf-8")
+
     for command in COMMANDS:
         print(f"\n==> Running: {' '.join(command)}", flush=True)
-        completed = subprocess.run(command, cwd=ROOT)
+        completed = subprocess.run(command, cwd=ROOT, env=env)
         if completed.returncode != 0:
             return completed.returncode
 
