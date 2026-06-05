@@ -72,7 +72,10 @@
 
         resetPingzhongGlobals() {
             window.fS_name = undefined;
+            window.fS_code = undefined;
+            window.ishb = undefined;
             window.Data_netWorthTrend = undefined;
+            window.Data_millionCopiesIncome = undefined;
         },
 
         formatSyncTime(value) {

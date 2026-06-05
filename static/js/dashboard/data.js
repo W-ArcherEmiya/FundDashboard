@@ -329,7 +329,20 @@
             };
 
             script.onload = () => {
-                if (window.fS_name && window.Data_netWorthTrend && window.Data_netWorthTrend.length > 0) {
+                if (window.fS_name && (window.ishb || (window.Data_millionCopiesIncome && window.Data_millionCopiesIncome.length > 0))) {
+                    const incomeHistory = Array.isArray(window.Data_millionCopiesIncome) ? window.Data_millionCopiesIncome : [];
+                    const latestIncome = incomeHistory.length > 0 ? incomeHistory[incomeHistory.length - 1] : null;
+                    const prevIncome = incomeHistory.length > 1 ? incomeHistory[incomeHistory.length - 2] : latestIncome;
+                    finish({
+                        name: window.fS_name,
+                        latest: 1,
+                        prev: 1,
+                        dateMs: latestIncome ? latestIncome[0] : Date.now(),
+                        isMoneyFund: true,
+                        millionIncome: latestIncome ? Number(latestIncome[1]) : 0,
+                        prevMillionIncome: prevIncome ? Number(prevIncome[1]) : 0
+                    });
+                } else if (window.fS_name && window.Data_netWorthTrend && window.Data_netWorthTrend.length > 0) {
                     const history = window.Data_netWorthTrend;
                     const latest = history[history.length - 1];
                     const prev = history.length > 1 ? history[history.length - 2] : latest;
