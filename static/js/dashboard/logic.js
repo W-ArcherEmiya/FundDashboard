@@ -102,6 +102,29 @@
             let isActual;
             let timeStr;
 
+            if (hist.isMoneyFund) {
+                const badgeDate = String(bjTime.getUTCMonth() + 1).padStart(2, '0') + '-' +
+                    String(bjTime.getUTCDate()).padStart(2, '0');
+                const millionIncome = Number(hist.millionIncome);
+                const dailyProfit = Number.isFinite(millionIncome) ? (millionIncome * shares / 10000) : 0;
+
+                return {
+                    code: fund.code,
+                    group: fund.group,
+                    name: rt ? rt.name : hist.name,
+                    estRate: 0,
+                    estNav: 1,
+                    dailyProfit,
+                    holdProfit: cost > 0 ? (1 - cost) * shares : 0,
+                    totalAsset: shares,
+                    gztime: '\u8d27\u5e01\u6536\u76ca(' + badgeDate + ')',
+                    isActual: true,
+                    isBackup: !rt,
+                    isMoneyFund: true,
+                    valid: true
+                };
+            }
+
             const gzDateStr = rt && rt.gztime ? rt.gztime.split(' ')[0] : '';
             if (rt && gzDateStr > actualDateStr) {
                 currentNav = parseFloat(rt.gsz);

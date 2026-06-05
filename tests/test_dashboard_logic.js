@@ -91,6 +91,21 @@ runTest('buildFundResult marks backup mode when only historical settlement exist
     assert.equal(result.totalAsset, 7.5);
 });
 
+runTest('buildFundResult handles money funds with million-copy income', () => {
+    const result = logic.buildFundResult(
+        { code: '018092', shares: '878.73', cost: '0.9909', group: '稳健' },
+        { name: '货币基金', latest: 1, prev: 1, dateMs: Date.UTC(2026, 5, 5, 15, 0, 0), isMoneyFund: true, millionIncome: 0.3414 },
+        null
+    );
+
+    assert.equal(result.valid, true);
+    assert.equal(result.isMoneyFund, true);
+    assert.equal(result.estNav, 1);
+    assert.equal(result.totalAsset, 878.73);
+    assertAlmostEqual(result.dailyProfit, 0.03, 0.0001);
+    assertAlmostEqual(result.holdProfit, 7.996443, 0.0001);
+});
+
 runTest('buildFundResult returns fallback realtime snapshot when historical data is unavailable', () => {
     const result = logic.buildFundResult(
         { code: '000003', shares: '8', cost: '1.1', group: '混合' },

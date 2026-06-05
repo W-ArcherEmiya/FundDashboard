@@ -972,6 +972,12 @@
             };
 
             script.onload = () => {
+                const incomeHistory = window.Data_millionCopiesIncome;
+                if (window.ishb || (Array.isArray(incomeHistory) && incomeHistory.length > 0)) {
+                    finish(1);
+                    return;
+                }
+
                 const history = window.Data_netWorthTrend;
                 if (Array.isArray(history) && history.length > 0) {
                     const latest = history[history.length - 1];
