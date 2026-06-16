@@ -3,7 +3,7 @@
     const { state } = app;
     const AUTO_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 
-    document.addEventListener('DOMContentLoaded', () => {
+    document.addEventListener('DOMContentLoaded', async () => {
         state.addModal = new bootstrap.Modal(document.getElementById('addModal'));
         state.syncModal = new bootstrap.Modal(document.getElementById('syncModal'));
         state.importModal = new bootstrap.Modal(document.getElementById('importModal'));
@@ -11,8 +11,11 @@
         const savedSyncCode = localStorage.getItem('lastSyncCode');
         if (savedSyncCode) document.getElementById('syncCodeInput').value = savedSyncCode;
 
-        if (state.myFunds.length > 0) app.ui.renderUI(true);
-        app.data.refreshNetworkData();
+        const restoredFromCloud = savedSyncCode ? await app.data.autoRestoreCloudData(savedSyncCode) : false;
+        if (!restoredFromCloud) {
+            if (state.myFunds.length > 0) app.ui.renderUI(true);
+            app.data.refreshNetworkData();
+        }
         setInterval(() => app.data.refreshNetworkData({ allowQueue: false }), AUTO_REFRESH_INTERVAL_MS);
     });
 
