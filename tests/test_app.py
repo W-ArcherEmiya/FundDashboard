@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 
 import app as fund_app
+from scripts import refresh_cloud_snapshots
 
 
 class FundDashboardAppTests(unittest.TestCase):
@@ -111,6 +112,43 @@ class FundDashboardAppTests(unittest.TestCase):
         self.assertEqual(payload['data'][0]['code'], '000001')
         self.assertEqual(payload['snapshot'], [])
         self.assertIsNone(payload['updated_at'])
+
+    def test_refresh_cloud_snapshots_updates_snapshot_without_changing_holdings(self):
+        fund_app.save_data({
+            '159357': {
+                'data': [{'code': '000001', 'shares': '10.0', 'cost': '1.2', 'group': '稳健'}],
+                'snapshot': [],
+                'updated_at': '2026-01-01T00:00:00Z',
+            }
+        })
+
+        original_refresh = refresh_cloud_snapshots.refresh_funds_snapshot
+        try:
+            refresh_cloud_snapshots.refresh_funds_snapshot = lambda funds: [{
+                'code': funds[0]['code'],
+                'group': funds[0]['group'],
+                'name': '测试基金',
+                'estNav': 1.3,
+                'dailyProfit': 1.0,
+                'holdProfit': 2.0,
+                'totalAsset': 13.0,
+                'gztime': '后台刷新',
+                'valid': True,
+                'isActual': True,
+                'isBackup': False,
+                'isUnavailable': False,
+            }]
+
+            result = refresh_cloud_snapshots.refresh_sync_snapshots(sync_code='159357')
+        finally:
+            refresh_cloud_snapshots.refresh_funds_snapshot = original_refresh
+
+        self.assertEqual(result['refreshed'], 1)
+        payload = fund_app.load_data()['159357']
+        self.assertEqual(payload['data'][0]['shares'], '10.0')
+        self.assertEqual(payload['snapshot'][0]['name'], '测试基金')
+        self.assertEqual(payload['snapshot'][0]['totalAsset'], 13.0)
+        self.assertIn('auto_refreshed_at', payload)
 
     def test_sync_save_rejects_invalid_json_shape(self):
         response = self.client.post('/api/sync/save', json=['not-an-object'])
