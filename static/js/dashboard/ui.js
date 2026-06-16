@@ -62,6 +62,20 @@
             </div>`;
     }
 
+    function renderMobileTabs(groups) {
+        let tabsHtml = `
+            <nav class="mobile-tabs" aria-label="分组切换">
+                <button class="mobile-tab ${state.activeTabId === 'tab-summary' ? 'active' : ''}" data-action="switch-tab" data-tab-id="tab-summary">概览</button>`;
+
+        groups.forEach((group, index) => {
+            const tabId = `tab-group-${index}`;
+            tabsHtml += `
+                <button class="mobile-tab ${state.activeTabId === tabId ? 'active' : ''}" data-action="switch-tab" data-tab-id="${utils.escapeHtml(tabId)}" data-group-name="${utils.escapeHtml(group)}">${utils.escapeHtml(group)}</button>`;
+        });
+
+        return `${tabsHtml}</nav>`;
+    }
+
     function renderMobileBottomNav(groups) {
         const nav = document.getElementById('mobileBottomNav');
         if (!nav) return;
@@ -228,6 +242,7 @@
                         </div>
                     </div>
                     ${renderMobileQuickActions()}
+                    ${renderMobileTabs(groups)}
                     <div class="mobile-distribution">
                         <div class="asset-strip">${stripSegments}</div>
                         <div class="asset-legend">${groupRows || '<div class="empty-inline">本轮还没有可展示的分组数据</div>'}</div>
@@ -347,6 +362,7 @@
         if (groupItems.length === 0) {
             return `
                 <section class="page-shell page-shell-group">
+                    ${renderMobileTabs(groups)}
                     <div class="panel empty-state">
                         <div class="empty-illustration" aria-hidden="true">
                             <span class="empty-illustration-card"></span>
@@ -369,6 +385,7 @@
 
         return `
             <section class="page-shell page-shell-group">
+                ${renderMobileTabs(groups)}
                 <div class="panel fund-list-panel">
                     <div class="fund-list-head">
                         <div class="fund-list-head-main">基金</div>
