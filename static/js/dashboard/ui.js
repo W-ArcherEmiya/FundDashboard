@@ -119,9 +119,8 @@
             return `<span class="asset-strip-segment ${tone}" style="width:${item.percent.toFixed(2)}%"></span>`;
         }).join('');
 
-        const lastSyncUpdatedAt = localStorage.getItem('lastSyncUpdatedAt');
         const syncHint = localStorage.getItem('lastSyncCode')
-            ? `本机已记住同步码${lastSyncUpdatedAt ? `，最近云端更新时间 ${utils.formatSyncTime(lastSyncUpdatedAt)}。` : '，可直接恢复云端数据。'}`
+            ? '本机已记住同步码，可直接恢复云端数据。'
             : '当前设备还没有保存同步码。';
 
         return `
@@ -199,7 +198,7 @@
                             </div>
                             <div class="fact-item">
                                 <span class="fact-label">最近更新时间</span>
-                                <span class="fact-value">${utils.escapeHtml(lastTime)}</span>
+                                <span class="fact-value">${utils.escapeHtml(utils.formatMarketTime(lastTime))}</span>
                             </div>
                         </div>
                     </div>
@@ -1124,6 +1123,10 @@
         const status = document.getElementById('importStatus');
         if (status) status.textContent = state.importCandidates.length ? `剩余 ${state.importCandidates.length} 只待归类基金` : '本次截图中的基金已处理完';
         showNotice(`已归类 ${added} 只基金到「${targetGroup}」${updated ? `，更新 ${updated} 只已有基金` : ''}${skipped ? `，跳过 ${skipped} 只` : ''}`, 'success', 5000);
+
+        if (state.importCandidates.length === 0 && state.importModal) {
+            state.importModal.hide();
+        }
     }
 
     function updateDropdownList() {
