@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-    {% set asset_version = '20260616-mobile-amount-polish' %}
+    {% set asset_version = '20260616-mobile-more-menu' %}
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>资产看板</title>
@@ -119,6 +119,29 @@
             <div class="modal-footer border-top-0 px-4 pb-4">
                 <button type="button" class="btn btn-light" data-action="reset-import">重新选择</button>
                 <button type="button" class="btn px-4 btn-save-fund" data-action="add-import-selected">确认归类</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade mobile-more-modal" id="mobileMoreModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content border-0 shadow-lg modal-shell">
+            <div class="modal-header border-bottom-0 pt-4 px-4">
+                <h5 class="modal-title fw-bold modal-title-main">更多操作</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body px-4 pb-4">
+                <div class="mobile-more-actions">
+                    <button type="button" class="mobile-more-action" data-action="refresh-data" data-bs-dismiss="modal">
+                        <i class="bi bi-arrow-clockwise"></i>
+                        <span>刷新净值</span>
+                    </button>
+                    <button type="button" class="mobile-more-action" data-action="export-analysis-csv" data-bs-dismiss="modal">
+                        <i class="bi bi-file-earmark-spreadsheet"></i>
+                        <span>导出表格</span>
+                    </button>
+                </div>
             </div>
         </div>
     </div>

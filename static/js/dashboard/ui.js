@@ -61,7 +61,7 @@
                     <span class="mobile-quick-icon" aria-hidden="true">${renderIcon('sync')}</span>
                     <span>同步</span>
                 </button>
-                <button class="mobile-quick-action" data-action="refresh-data">
+                <button class="mobile-quick-action" type="button" data-bs-toggle="modal" data-bs-target="#mobileMoreModal">
                     <span class="mobile-quick-icon" aria-hidden="true">${renderIcon('more')}</span>
                     <span>更多</span>
                 </button>
