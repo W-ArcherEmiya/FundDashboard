@@ -48,6 +48,9 @@
             case 'switch-tab':
                 app.ui.switchTab(tabId, groupName);
                 break;
+            case 'switch-first-group':
+                app.ui.switchToHoldings();
+                break;
             case 'open-add':
                 app.ui.openAddModal(defaultGroup);
                 break;

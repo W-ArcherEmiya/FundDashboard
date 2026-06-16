@@ -32,6 +32,58 @@
         return `<span class="num-fit" title="${utils.escapeHtml(titleText)}">${utils.escapeHtml(displayText)}</span>`;
     }
 
+    function renderIcon(name) {
+        const icons = {
+            add: '<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"></path></svg>',
+            sync: '<svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"></path><path d="M16 16h5v5"></path></svg>',
+            more: '<svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"></circle><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle></svg>',
+            overview: '<svg viewBox="0 0 24 24"><path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path></svg>',
+            holdings: '<svg viewBox="0 0 24 24"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"></path></svg>',
+            import: '<svg viewBox="0 0 24 24"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>'
+        };
+        return icons[name] || '';
+    }
+
+    function renderMobileQuickActions() {
+        return `
+            <div class="mobile-quick-actions" aria-label="快捷工具">
+                <button class="mobile-quick-action" data-action="open-add">
+                    <span class="mobile-quick-icon" aria-hidden="true">${renderIcon('add')}</span>
+                    <span>添加</span>
+                </button>
+                <button class="mobile-quick-action" data-action="open-sync">
+                    <span class="mobile-quick-icon" aria-hidden="true">${renderIcon('sync')}</span>
+                    <span>同步</span>
+                </button>
+                <button class="mobile-quick-action" data-action="refresh-data">
+                    <span class="mobile-quick-icon" aria-hidden="true">${renderIcon('more')}</span>
+                    <span>更多</span>
+                </button>
+            </div>`;
+    }
+
+    function renderMobileBottomNav(groups) {
+        const nav = document.getElementById('mobileBottomNav');
+        if (!nav) return;
+
+        const inSummary = state.activeTabId === 'tab-summary';
+        const inGroup = !inSummary;
+        nav.innerHTML = `
+            <button class="mobile-nav-item ${inSummary ? 'active' : ''}" data-action="switch-tab" data-tab-id="tab-summary">
+                <span class="mobile-nav-icon" aria-hidden="true">${renderIcon('overview')}</span>
+                <span>概览</span>
+            </button>
+            <button class="mobile-nav-item ${inGroup ? 'active' : ''}" data-action="switch-first-group">
+                <span class="mobile-nav-icon" aria-hidden="true">${renderIcon('holdings')}</span>
+                <span>持仓</span>
+            </button>
+            <button class="mobile-nav-item" data-action="open-import">
+                <span class="mobile-nav-icon" aria-hidden="true">${renderIcon('import')}</span>
+                <span>导入</span>
+            </button>`;
+        nav.dataset.hasGroups = groups.length > 0 ? 'true' : 'false';
+    }
+
     function renderUI(isLoading = false) {
         const groups = logic.getGroups(state.myFunds);
         const tabContainer = document.getElementById('fundTabs');
@@ -62,6 +114,7 @@
 
         tabContainer.innerHTML = tabsHtml;
         document.getElementById('contentArea').innerHTML = generateCurrentTabContent(groups, isLoading);
+        renderMobileBottomNav(groups);
     }
 
     function switchTab(tabId, groupName) {
@@ -69,6 +122,15 @@
         state.currentActiveGroup = groupName || null;
         app.persistActiveTab();
         renderUI(false);
+    }
+
+    function switchToHoldings() {
+        const groups = logic.getGroups(state.myFunds);
+        if (!groups.length) {
+            showNotice('还没有可查看的持仓分组', 'info');
+            return;
+        }
+        switchTab('tab-group-0', groups[0]);
     }
 
     function generateCurrentTabContent(groups, isLoading) {
@@ -122,6 +184,8 @@
         const syncHint = localStorage.getItem('lastSyncCode')
             ? '本机已记住同步码，可直接恢复云端数据。'
             : '当前设备还没有保存同步码。';
+        const settledStatusText = settledCount === displayData.length ? '已完成本轮计算' : '正在补齐净值';
+        const marketTimeText = utils.formatMarketTime(lastTime);
 
         return `
             <section class="page-shell page-shell-summary">
@@ -133,8 +197,12 @@
                                 <div class="summary-title">总资产</div>
                                 <div class="summary-main-num">${renderAmountText(totalAssets, { currency: true })}</div>
                             </div>
-                            <div class="summary-status ${settledCount === displayData.length ? 'summary-status-ready' : 'summary-status-loading'}">
-                                ${settledCount === displayData.length ? '已完成本轮计算' : '正在补齐净值'}
+                            <div class="summary-status-stack">
+                                <div class="summary-status ${settledCount === displayData.length ? 'summary-status-ready' : 'summary-status-loading'}">
+                                    ${settledStatusText}
+                                </div>
+                                <div class="summary-status-meta">${state.myFunds.length} 项持仓 · ${settledCount} 项已计算</div>
+                                <div class="summary-status-meta">${utils.escapeHtml(marketTimeText)}</div>
                             </div>
                         </div>
                         <div class="summary-metrics">
@@ -147,7 +215,7 @@
                                 <div class="metric-value ${utils.getColorClass(totalHold)}">${renderAmountText(totalHold, { forceSign: true })}</div>
                             </div>
                         </div>
-                        <div class="distribution-block">
+                        <div class="distribution-block desktop-distribution">
                             <div class="section-head">
                                 <div>
                                     <div class="section-title">资产分布</div>
@@ -158,6 +226,11 @@
                             <div class="asset-strip">${stripSegments}</div>
                             <div class="asset-legend">${groupRows || '<div class="empty-inline">本轮还没有可展示的分组数据</div>'}</div>
                         </div>
+                    </div>
+                    ${renderMobileQuickActions()}
+                    <div class="mobile-distribution">
+                        <div class="asset-strip">${stripSegments}</div>
+                        <div class="asset-legend">${groupRows || '<div class="empty-inline">本轮还没有可展示的分组数据</div>'}</div>
                     </div>
                 </div>
                 <aside class="summary-side">
@@ -238,7 +311,13 @@
                         </div>
                         <div class="group-row-right">
                             <div class="group-row-asset">${renderAmountText(item.assets, { currency: true })}</div>
-                            <div class="group-row-profit ${utils.getColorClass(dailyProfit)}">${renderAmountText(dailyProfit, { forceSign: true })}</div>
+                            <div class="group-row-profit-line">
+                                <span class="profit-label">今日</span>
+                                <span class="${utils.getColorClass(dailyProfit)}">${renderAmountText(dailyProfit, { forceSign: true })}</span>
+                                <span class="profit-separator"> | </span>
+                                <span class="profit-label">持有</span>
+                                <span class="${utils.getColorClass(holdProfit)}">${renderAmountText(holdProfit, { forceSign: true })}</span>
+                            </div>
                         </div>
                         <span class="group-fold-arrow" aria-hidden="true"></span>
                     </summary>
@@ -1210,6 +1289,7 @@
         renderUI,
         showNotice,
         switchTab,
+        switchToHoldings,
         openAddModal,
         openImportModal,
         resetImportModal,
