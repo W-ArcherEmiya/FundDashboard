@@ -388,16 +388,20 @@
 
         const sortedItems = sortGroupItems(groupItems);
         const itemsHtml = sortedItems.map(renderFundListItem).join('');
+        const groupSummaryHtml = renderGroupTabSummary(currentGroupName, groupItems);
 
         return `
             <section class="page-shell page-shell-group">
                 ${renderMobileTabs(groups)}
+                ${groupSummaryHtml}
                 <div class="panel fund-list-panel">
                     <div class="fund-list-head">
                         <div class="fund-list-head-main">基金</div>
-                        ${renderSortableHead('estNav', '估算/实际净值')}
-                        ${renderSortableHead('dailyProfit', '当日(估)')}
-                        ${renderSortableHead('holdProfit', '持有盈亏')}
+                        <div class="fund-list-head-metrics">
+                            ${renderSortableHead('estNav', '估算/实际净值', '净值')}
+                            ${renderSortableHead('dailyProfit', '当日(估)', '当日')}
+                            ${renderSortableHead('holdProfit', '持有盈亏', '持有')}
+                        </div>
                     </div>
                     <div class="fund-list">
                         ${itemsHtml}
@@ -410,7 +414,30 @@
             </section>`;
     }
 
-    function renderSortableHead(key, label) {
+    function renderGroupTabSummary(groupName, groupItems) {
+        const totalAsset = (groupItems || []).reduce((sum, item) => {
+            if (item.valid && !item.isLoading && !item.isUnavailable && Number.isFinite(Number(item.totalAsset))) {
+                return sum + Number(item.totalAsset);
+            }
+            return sum;
+        }, 0);
+        const sort = state.groupListSort || {};
+        const keyLabels = {
+            estNav: '净值',
+            dailyProfit: '当日盈亏',
+            holdProfit: '持有盈亏'
+        };
+        const sortKey = ['estNav', 'dailyProfit', 'holdProfit'].includes(sort.key) ? sort.key : 'dailyProfit';
+        const direction = sort.direction === 'asc' ? '升序' : '降序';
+
+        return `
+            <div class="mobile-group-summary" aria-label="${utils.escapeHtml(groupName || '当前分组')}概览">
+                <div class="mobile-group-summary-meta">${groupItems.length} 项资产 | 按${keyLabels[sortKey]}${direction}</div>
+                <div class="mobile-group-summary-asset">${renderAmountText(totalAsset, { currency: true, compact: false })}</div>
+            </div>`;
+    }
+
+    function renderSortableHead(key, label, shortLabel = label) {
         const sort = state.groupListSort || {};
         const isActive = sort.key === key;
         const direction = isActive ? sort.direction : 'desc';
@@ -418,7 +445,8 @@
 
         return `
             <div class="fund-head-sort">
-                <span>${utils.escapeHtml(label)}</span>
+                <span class="fund-sort-label fund-sort-label-full">${utils.escapeHtml(label)}</span>
+                <span class="fund-sort-label fund-sort-label-short">${utils.escapeHtml(shortLabel)}</span>
                 <button class="fund-sort-btn ${isActive ? 'fund-sort-btn-active' : ''}" data-action="sort-group-list" data-sort-key="${utils.escapeHtml(key)}" title="${utils.escapeHtml(title)}" aria-label="${utils.escapeHtml(title)}">
                     <span class="sort-triangle sort-triangle-up ${isActive && direction === 'asc' ? 'sort-triangle-active' : ''}" aria-hidden="true"></span>
                     <span class="sort-triangle sort-triangle-down ${isActive && direction === 'desc' ? 'sort-triangle-active' : ''}" aria-hidden="true"></span>
@@ -503,18 +531,20 @@
                         <div class="fund-list-total">总金额 ${renderAmountText(item.totalAsset, { currency: true })}</div>
                     </div>
                 </div>
-                <div class="fund-list-cell">
-                    <span class="fund-list-label">${navLabel}</span>
-                    <span class="fund-list-value">${item.estNav.toFixed(4)}</span>
-                    <span class="status-pill fund-list-rate ${pillClass}">${badgeText}</span>
-                </div>
-                <div class="fund-list-cell">
-                    <span class="fund-list-label">${dailyLabel}</span>
-                    <span class="fund-list-value ${utils.getColorClass(item.dailyProfit)}">${renderAmountText(item.dailyProfit, { forceSign: true })}</span>
-                </div>
-                <div class="fund-list-cell">
-                    <span class="fund-list-label">持有盈亏</span>
-                    <span class="fund-list-value ${utils.getColorClass(item.holdProfit)}">${renderAmountText(item.holdProfit, { forceSign: true })}</span>
+                <div class="fund-list-metrics">
+                    <div class="fund-list-cell">
+                        <span class="fund-list-label">${navLabel}</span>
+                        <span class="fund-list-value">${item.estNav.toFixed(4)}</span>
+                        <span class="status-pill fund-list-rate ${pillClass}">${badgeText}</span>
+                    </div>
+                    <div class="fund-list-cell">
+                        <span class="fund-list-label">${dailyLabel}</span>
+                        <span class="fund-list-value ${utils.getColorClass(item.dailyProfit)}">${renderAmountText(item.dailyProfit, { forceSign: true })}</span>
+                    </div>
+                    <div class="fund-list-cell">
+                        <span class="fund-list-label">持有盈亏</span>
+                        <span class="fund-list-value ${utils.getColorClass(item.holdProfit)}">${renderAmountText(item.holdProfit, { forceSign: true })}</span>
+                    </div>
                 </div>
             </article>`;
     }
