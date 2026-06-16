@@ -1094,6 +1094,33 @@ button {
     color: var(--lark-text-title);
 }
 
+.mobile-more-actions {
+    display: grid;
+    gap: 10px;
+}
+
+.mobile-more-action {
+    min-height: 48px;
+    border: 1px solid var(--divider);
+    border-radius: 12px;
+    background: #FFFFFF;
+    color: var(--lark-text-title);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0 14px;
+    font-size: 14px;
+    font-weight: 400;
+    text-align: left;
+}
+
+.mobile-more-action i {
+    width: 22px;
+    color: var(--lark-blue);
+    font-size: 17px;
+    text-align: center;
+}
+
 .form-label-soft {
     font-size: 14px;
     color: var(--lark-text-body);
