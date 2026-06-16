@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 
 import app as fund_app
+import fund_refresh
 from scripts import refresh_cloud_snapshots
 
 
@@ -12,6 +13,7 @@ class FundDashboardAppTests(unittest.TestCase):
     def setUp(self):
         self.original_data_file = fund_app.DATA_FILE
         self.original_export_dir = fund_app.EXPORT_DIR
+        self.original_refresh_token = os.environ.get(fund_app.REFRESH_TOKEN_ENV)
         self.test_data_file = Path(__file__).resolve().parent / '.tmp_sync_data.json'
         self.test_export_dir = Path(tempfile.mkdtemp(prefix='funddashboard_exports_'))
         if self.test_data_file.exists():
@@ -23,6 +25,10 @@ class FundDashboardAppTests(unittest.TestCase):
     def tearDown(self):
         fund_app.DATA_FILE = self.original_data_file
         fund_app.EXPORT_DIR = self.original_export_dir
+        if self.original_refresh_token is None:
+            os.environ.pop(fund_app.REFRESH_TOKEN_ENV, None)
+        else:
+            os.environ[fund_app.REFRESH_TOKEN_ENV] = self.original_refresh_token
         if self.test_data_file.exists():
             self.test_data_file.unlink()
         if self.test_export_dir.exists():
@@ -122,9 +128,9 @@ class FundDashboardAppTests(unittest.TestCase):
             }
         })
 
-        original_refresh = refresh_cloud_snapshots.refresh_funds_snapshot
+        original_refresh = fund_refresh.refresh_funds_snapshot
         try:
-            refresh_cloud_snapshots.refresh_funds_snapshot = lambda funds: [{
+            fund_refresh.refresh_funds_snapshot = lambda funds: [{
                 'code': funds[0]['code'],
                 'group': funds[0]['group'],
                 'name': '测试基金',
@@ -141,7 +147,7 @@ class FundDashboardAppTests(unittest.TestCase):
 
             result = refresh_cloud_snapshots.refresh_sync_snapshots(sync_code='159357')
         finally:
-            refresh_cloud_snapshots.refresh_funds_snapshot = original_refresh
+            fund_refresh.refresh_funds_snapshot = original_refresh
 
         self.assertEqual(result['refreshed'], 1)
         payload = fund_app.load_data()['159357']
@@ -149,6 +155,43 @@ class FundDashboardAppTests(unittest.TestCase):
         self.assertEqual(payload['snapshot'][0]['name'], '测试基金')
         self.assertEqual(payload['snapshot'][0]['totalAsset'], 13.0)
         self.assertIn('auto_refreshed_at', payload)
+
+    def test_admin_refresh_cloud_snapshots_requires_configured_token(self):
+        os.environ.pop(fund_app.REFRESH_TOKEN_ENV, None)
+
+        response = self.client.get('/api/admin/refresh-cloud-snapshots?token=anything')
+
+        self.assertEqual(response.status_code, 503)
+        self.assertFalse(response.get_json()['success'])
+
+    def test_admin_refresh_cloud_snapshots_rejects_bad_token(self):
+        os.environ[fund_app.REFRESH_TOKEN_ENV] = 'secret-token'
+
+        response = self.client.get('/api/admin/refresh-cloud-snapshots?token=bad-token')
+
+        self.assertEqual(response.status_code, 401)
+        self.assertFalse(response.get_json()['success'])
+
+    def test_admin_refresh_cloud_snapshots_runs_with_valid_token(self):
+        os.environ[fund_app.REFRESH_TOKEN_ENV] = 'secret-token'
+        original_refresh = fund_app.refresh_sync_snapshots
+        try:
+            fund_app.refresh_sync_snapshots = lambda sync_code=None: {
+                'refreshed': 1,
+                'skipped': 0,
+                'total': 1,
+                'sync_code': sync_code,
+            }
+
+            response = self.client.get('/api/admin/refresh-cloud-snapshots?token=secret-token&sync_code=159357')
+        finally:
+            fund_app.refresh_sync_snapshots = original_refresh
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload['success'])
+        self.assertEqual(payload['refreshed'], 1)
+        self.assertEqual(payload['sync_code'], '159357')
 
     def test_sync_save_rejects_invalid_json_shape(self):
         response = self.client.post('/api/sync/save', json=['not-an-object'])

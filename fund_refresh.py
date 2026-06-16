@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import math
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone, timedelta
 from typing import Any
 from urllib.error import URLError
@@ -10,6 +11,7 @@ from urllib.request import Request, urlopen
 
 
 REQUEST_TIMEOUT_SECONDS = 8
+MAX_REFRESH_WORKERS = 6
 USER_AGENT = "Mozilla/5.0 FundDashboard/1.0"
 EASTMONEY_HISTORY_URL = "https://fund.eastmoney.com/pingzhongdata/{code}.js?rt={timestamp}"
 FUNDGZ_URL = "https://fundgz.1234567.com.cn/js/{code}.js?rt={timestamp}"
@@ -228,14 +230,27 @@ def build_snapshot_item(fund: dict[str, Any], hist: dict[str, Any] | None, rt: d
 
 
 def refresh_funds_snapshot(funds: list[dict[str, Any]]) -> list[dict[str, Any] | None]:
-    snapshot: list[dict[str, Any] | None] = []
-    for fund in funds:
+    def refresh_one(index: int, fund: dict[str, Any]) -> tuple[int, dict[str, Any] | None]:
         code = str(fund.get("code", "")).strip()
         if not re.fullmatch(r"\d{6}", code):
-            snapshot.append(None)
-            continue
+            return index, None
 
         hist = fetch_history(code)
         rt = fetch_realtime_estimate(code)
-        snapshot.append(build_snapshot_item(fund, hist, rt))
+        return index, build_snapshot_item(fund, hist, rt)
+
+    snapshot: list[dict[str, Any] | None] = [None] * len(funds)
+    if not funds:
+        return snapshot
+
+    workers = max(1, min(MAX_REFRESH_WORKERS, len(funds)))
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = [
+            executor.submit(refresh_one, index, fund)
+            for index, fund in enumerate(funds)
+        ]
+        for future in as_completed(futures):
+            index, item = future.result()
+            snapshot[index] = item
+
     return snapshot

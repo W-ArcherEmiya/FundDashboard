@@ -60,7 +60,11 @@ pip install -r requirements-ocr.txt
 ## ⏱️ 后台自动刷新
 
 浏览器关闭后，前端 JavaScript 不会继续运行。若要在不开网页时也更新云端快照，
-可以在 PythonAnywhere 的 **Tasks** 中新增 scheduled task，定时执行：
+可以使用两种方式触发后台刷新。
+
+### 方式一：PythonAnywhere Tasks
+
+如果你的 PythonAnywhere 账号支持 **Tasks**，新增 scheduled task，定时执行：
 
 ```bash
 cd /home/ArcherEmiya && python scripts/refresh_cloud_snapshots.py
@@ -71,6 +75,32 @@ cd /home/ArcherEmiya && python scripts/refresh_cloud_snapshots.py
 ```bash
 cd /home/ArcherEmiya && python scripts/refresh_cloud_snapshots.py --sync-code 你的同步码
 ```
+
+### 方式二：外部免费 cron 访问刷新接口
+
+如果 PythonAnywhere Tasks 不可用，可以用外部 cron 服务定时访问一个受保护 URL。
+
+先在 PythonAnywhere 的 WSGI 配置文件里设置刷新令牌，放在导入 Flask app 之前：
+
+```python
+import os
+os.environ["FUND_REFRESH_TOKEN"] = "换成一串足够长的随机字符"
+```
+
+Reload Web App 后，用浏览器或外部 cron 访问：
+
+```text
+https://你的域名.pythonanywhere.com/api/admin/refresh-cloud-snapshots?token=你的刷新令牌
+```
+
+只刷新某一个同步码：
+
+```text
+https://你的域名.pythonanywhere.com/api/admin/refresh-cloud-snapshots?token=你的刷新令牌&sync_code=你的同步码
+```
+
+建议使用 `cron-job.org`、`EasyCron` 等外部服务，频率先设为 30-60 分钟一次。
+刷新令牌不要发给别人；未配置 `FUND_REFRESH_TOKEN` 时，该 HTTP 接口默认不可用。
 
 脚本会读取 `sync_data.json` 中已上传的持仓，拉取基金行情并更新同一同步码下的 `snapshot`。
 另一台设备点“下载到本地”后，会拿到后台更新过的快照。脚本不会修改份额、成本和分组。
