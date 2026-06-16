@@ -22,6 +22,7 @@ MAX_SYNC_SNAPSHOT_ITEMS = 500
 MAX_EXPORT_ROWS = 1000
 MAX_EXPORT_FILES = 30
 OCR_MAX_IMAGE_BYTES = 8 * 1024 * 1024
+REFRESH_TOKEN_ENV = 'FUND_REFRESH_TOKEN'
 DATA_LOCK = threading.Lock()
 OCR_ENGINE_LOCK = threading.Lock()
 OCR_ENGINE_STATE = {"name": None, "engine": None, "error": None}
@@ -266,6 +267,48 @@ def unpack_sync_entry(entry):
         snapshot = entry.get('snapshot') if isinstance(entry.get('snapshot'), list) else []
         return entry['data'], updated_at if isinstance(updated_at, str) else None, snapshot
     return None, None, []
+
+
+def refresh_sync_snapshots(sync_code=None, dry_run=False):
+    """Refresh cloud display snapshots for one or all sync codes."""
+    from fund_refresh import refresh_funds_snapshot
+
+    with DATA_LOCK:
+        db = load_data()
+        refreshed = 0
+        skipped = 0
+
+        for code, entry in list(db.items()):
+            if sync_code and code != sync_code:
+                continue
+
+            funds_data, _, _ = unpack_sync_entry(entry)
+            if not funds_data:
+                skipped += 1
+                continue
+
+            snapshot = refresh_funds_snapshot(funds_data)
+            refreshed += 1
+
+            if dry_run:
+                continue
+
+            now = utc_now_iso()
+            db[code] = {
+                "data": funds_data,
+                "snapshot": snapshot,
+                "updated_at": now,
+                "auto_refreshed_at": now,
+            }
+
+        if not dry_run and refreshed:
+            save_data(db)
+
+    return {
+        "refreshed": refreshed,
+        "skipped": skipped,
+        "total": len(db),
+    }
 
 
 def get_ocr_engine():
@@ -649,6 +692,39 @@ def sync_load(sync_code):
         return jsonify({"success": False, "message": "同步数据格式异常，请重新上传"}), 500
     else:
         return jsonify({"success": False, "message": "未找到该同步码的数据，请先上传"}), 404
+
+
+@app.route('/api/admin/refresh-cloud-snapshots', methods=['GET', 'POST'])
+def admin_refresh_cloud_snapshots():
+    expected_token = os.environ.get(REFRESH_TOKEN_ENV, '').strip()
+    if not expected_token:
+        return jsonify({
+            "success": False,
+            "error": f"未配置 {REFRESH_TOKEN_ENV}，后台刷新接口未启用"
+        }), 503
+
+    provided_token = (
+        request.headers.get('X-Refresh-Token')
+        or request.args.get('token')
+        or ''
+    ).strip()
+    if provided_token != expected_token:
+        return jsonify({"success": False, "error": "刷新令牌无效"}), 401
+
+    sync_code = normalize_sync_code(request.args.get('sync_code') or '')
+    if request.args.get('sync_code') and not sync_code:
+        return jsonify({"success": False, "error": "同步码无效"}), 400
+
+    try:
+        result = refresh_sync_snapshots(sync_code=sync_code)
+    except Exception:
+        app.logger.exception("Cloud snapshot refresh failed")
+        return jsonify({"success": False, "error": "后台刷新失败"}), 500
+
+    if sync_code and result["refreshed"] == 0:
+        return jsonify({"success": False, "error": "未找到该同步码的数据", **result}), 404
+
+    return jsonify({"success": True, **result})
 
 if __name__ == '__main__':
     app.run(debug=os.environ.get('FLASK_DEBUG') == '1', port=5000)
