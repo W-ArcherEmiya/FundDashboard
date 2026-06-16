@@ -911,6 +911,33 @@ button {
     text-overflow: ellipsis;
 }
 
+.num-fit.amount-text {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.02em;
+    max-width: 100%;
+    min-width: 0;
+}
+
+.amount-symbol,
+.amount-unit {
+    flex: 0 0 auto;
+    font-size: 0.68em;
+    line-height: 1;
+    font-weight: 500;
+}
+
+.amount-unit {
+    margin-left: 0.06em;
+    transform: translateX(0.03em);
+}
+
+.amount-number {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 .fund-card-loading-row {
     display: inline-flex;
     align-items: center;
@@ -1573,13 +1600,26 @@ button {
         font-weight: 400;
     }
 
+    .summary-primary {
+        display: grid;
+        grid-template-rows: 18px 50px;
+        align-content: start;
+        gap: 4px;
+        min-height: 72px;
+    }
+
     .summary-main-num {
-        margin-top: 4px;
+        margin-top: 0;
         font-size: 38px;
-        line-height: 44px;
+        line-height: 50px;
         font-weight: 700;
         letter-spacing: 0;
         white-space: nowrap;
+    }
+
+    .summary-main-num .amount-symbol,
+    .summary-main-num .amount-unit {
+        font-weight: 500;
     }
 
     .summary-status-stack {
@@ -1627,6 +1667,12 @@ button {
         margin-top: 4px;
         font-size: 22px;
         line-height: 28px;
+        font-weight: 400;
+    }
+
+    .metric-value .amount-symbol,
+    .metric-value .amount-unit {
+        color: inherit;
     }
 
     .desktop-distribution {
