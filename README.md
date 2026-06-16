@@ -57,11 +57,32 @@ pip install -r requirements-ocr.txt
 避免 PythonAnywhere 等受限环境在运行时访问外部模型下载站点。
 如服务端 OCR 依赖不可用，应用仍会自动回退到浏览器 OCR。
 
+## ⏱️ 后台自动刷新
+
+浏览器关闭后，前端 JavaScript 不会继续运行。若要在不开网页时也更新云端快照，
+可以在 PythonAnywhere 的 **Tasks** 中新增 scheduled task，定时执行：
+
+```bash
+cd /home/ArcherEmiya && python scripts/refresh_cloud_snapshots.py
+```
+
+只刷新某一个同步码：
+
+```bash
+cd /home/ArcherEmiya && python scripts/refresh_cloud_snapshots.py --sync-code 你的同步码
+```
+
+脚本会读取 `sync_data.json` 中已上传的持仓，拉取基金行情并更新同一同步码下的 `snapshot`。
+另一台设备点“下载到本地”后，会拿到后台更新过的快照。脚本不会修改份额、成本和分组。
+
 ## 📂 目录结构
 
 ```text
 FundDashboard/
 ├── app.py                     # Flask 后端主程序（提供 Web 服务与同步 API）
+├── fund_refresh.py            # 后台行情刷新与快照计算逻辑
+├── scripts/
+│   └── refresh_cloud_snapshots.py # PythonAnywhere 定时任务入口
 ├── static/
 │   ├── css/
 │   │   └── dashboard.css     # 看板页面样式
