@@ -247,6 +247,35 @@
         }
     }
 
+    async function autoRestoreCloudData(syncCode) {
+        const code = String(syncCode || '').trim();
+        if (!code) return false;
+
+        try {
+            const response = await fetch('/api/sync/load/' + code);
+            const resData = await response.json();
+            if (!resData.success || !Array.isArray(resData.data)) return false;
+
+            state.myFunds = resData.data;
+            app.persistFunds();
+            localStorage.setItem('lastSyncCode', code);
+            if (resData.updated_at) localStorage.setItem('lastSyncUpdatedAt', resData.updated_at);
+
+            const hasSnapshot = applySyncSnapshot(resData.snapshot, state.myFunds);
+            if (hasSnapshot) {
+                app.ui.renderUI(false);
+                return true;
+            }
+
+            state.cachedResults = [];
+            app.ui.renderUI(true);
+            refreshNetworkData();
+            return true;
+        } catch {
+            return false;
+        }
+    }
+
     async function restoreLastSyncData() {
         const lastSyncCode = localStorage.getItem('lastSyncCode');
         if (!lastSyncCode) {
@@ -469,6 +498,7 @@
         openSyncModal,
         uploadSyncData,
         downloadSyncData,
+        autoRestoreCloudData,
         restoreLastSyncData,
         exportAnalysisCsv,
         refreshNetworkData
