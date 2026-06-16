@@ -28,8 +28,14 @@
         const compactText = utils.formatAmount(value, { forceSign, compact });
         const displayText = currency ? `¥${compactText}` : compactText;
         const titleText = currency ? `¥${fullText}` : fullText;
+        const amountMatch = String(displayText).match(/^(¥?)([+-]?)([\d,.]+)([万亿]?)$/);
 
-        return `<span class="num-fit" title="${utils.escapeHtml(titleText)}">${utils.escapeHtml(displayText)}</span>`;
+        if (!amountMatch) {
+            return `<span class="num-fit" title="${utils.escapeHtml(titleText)}">${utils.escapeHtml(displayText)}</span>`;
+        }
+
+        const [, currencySymbol, sign, numberText, unit] = amountMatch;
+        return `<span class="num-fit amount-text" title="${utils.escapeHtml(titleText)}">${currencySymbol ? `<span class="amount-symbol">${utils.escapeHtml(currencySymbol)}</span>` : ''}<span class="amount-number">${utils.escapeHtml(sign + numberText)}</span>${unit ? `<span class="amount-unit">${utils.escapeHtml(unit)}</span>` : ''}</span>`;
     }
 
     function renderIcon(name) {
@@ -207,7 +213,7 @@
                     <div class="panel summary-hero">
                         <div class="panel-kicker">资金看板</div>
                         <div class="summary-header">
-                            <div>
+                            <div class="summary-primary">
                                 <div class="summary-title">总资产</div>
                                 <div class="summary-main-num">${renderAmountText(totalAssets, { currency: true })}</div>
                             </div>
@@ -215,7 +221,7 @@
                                 <div class="summary-status ${settledCount === displayData.length ? 'summary-status-ready' : 'summary-status-loading'}">
                                     ${settledStatusText}
                                 </div>
-                                <div class="summary-status-meta">${state.myFunds.length} 项持仓 · ${settledCount} 项已计算</div>
+                                <div class="summary-status-meta">${state.myFunds.length} 项持仓 | ${settledCount} 项已计算</div>
                                 <div class="summary-status-meta">${utils.escapeHtml(marketTimeText)}</div>
                             </div>
                         </div>
