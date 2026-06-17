@@ -254,7 +254,7 @@
         try {
             const response = await fetch('/api/sync/load/' + code);
             const resData = await response.json();
-            if (!resData.success || !Array.isArray(resData.data)) return false;
+            if (!resData.success || !Array.isArray(resData.data) || resData.data.length === 0) return false;
 
             state.myFunds = resData.data;
             app.persistFunds();

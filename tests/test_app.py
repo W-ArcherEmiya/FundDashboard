@@ -211,6 +211,18 @@ class FundDashboardAppTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn('资产代码无效', response.get_json()['error'])
 
+    def test_sync_save_rejects_empty_fund_payload(self):
+        response = self.client.post(
+            '/api/sync/save',
+            json={
+                'sync_code': '159357',
+                'data': []
+            }
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('至少需要同步 1 条资产', response.get_json()['error'])
+
     def test_sync_load_returns_404_for_unknown_code(self):
         response = self.client.get('/api/sync/load/404404')
 

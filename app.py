@@ -132,6 +132,8 @@ def validate_funds_data(value):
     """校验并规范化同步数据，避免坏数据写入 JSON。"""
     if not isinstance(value, list):
         return None, "data 必须是数组"
+    if len(value) == 0:
+        return None, "至少需要同步 1 条资产"
     if len(value) > MAX_FUNDS_PER_SYNC:
         return None, f"单次同步最多支持 {MAX_FUNDS_PER_SYNC} 条资产"
 
