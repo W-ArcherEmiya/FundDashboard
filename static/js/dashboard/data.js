@@ -164,10 +164,21 @@
             };
         });
 
-        if (!results.some(Boolean)) return false;
+        const hasUsableSnapshot = results.some(item => logic.hasCompleteDisplayMetrics(item));
+        if (!hasUsableSnapshot) {
+            state.cachedResults = [];
+            return false;
+        }
         state.cachedResults = results;
         app.persistSyncSnapshotOverrides();
         return true;
+    }
+
+    function needsSnapshotRefresh() {
+        return (state.myFunds || []).some((fund, index) => {
+            const item = (state.cachedResults || [])[index];
+            return !logic.hasCompleteDisplayMetrics(item) && !(item && item.isUnavailable);
+        });
     }
 
     async function uploadSyncData() {
@@ -232,10 +243,11 @@
                 const syncTime = resData.updated_at ? `，云端更新时间 ${utils.formatSyncTime(resData.updated_at)}` : '';
                 const hasSnapshot = applySyncSnapshot(resData.snapshot, state.myFunds);
                 if (!hasSnapshot) state.cachedResults = [];
+                const shouldRefreshSnapshot = hasSnapshot && needsSnapshotRefresh();
                 app.ui.showNotice(`云端数据已同步到本地${syncTime}${hasSnapshot ? '，已恢复云端快照' : ''}`, 'success', 4000);
                 state.syncModal.hide();
                 app.ui.renderUI(!hasSnapshot);
-                if (!hasSnapshot) refreshNetworkData();
+                if (!hasSnapshot || shouldRefreshSnapshot) refreshNetworkData();
             } else {
                 app.ui.showNotice('下载失败：' + resData.message, 'error', 4000);
             }
@@ -264,6 +276,7 @@
             const hasSnapshot = applySyncSnapshot(resData.snapshot, state.myFunds);
             if (hasSnapshot) {
                 app.ui.renderUI(false);
+                if (needsSnapshotRefresh()) refreshNetworkData();
                 return true;
             }
 

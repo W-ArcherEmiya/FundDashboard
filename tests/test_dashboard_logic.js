@@ -34,11 +34,23 @@ runTest('buildDisplayData returns loading placeholders when cache is not ready',
     assert.equal(displayData[0].valid, true);
 });
 
+runTest('buildDisplayData treats malformed cached snapshots as loading', () => {
+    const myFunds = [{ code: '000001', shares: '10', cost: '1.2', group: '稳健' }];
+    const displayData = logic.buildDisplayData(myFunds, [
+        { code: '000001', group: '稳健', valid: true }
+    ], false);
+
+    assert.equal(displayData[0].code, '000001');
+    assert.equal(displayData[0].isLoading, true);
+    assert.equal(displayData[0].valid, true);
+});
+
 runTest('summarizeDisplayData aggregates totals and group profit', () => {
     const summary = logic.summarizeDisplayData([
-        { valid: true, isLoading: false, dailyProfit: 12, holdProfit: 20, totalAsset: 100, gztime: '2026-04-11 14:00', group: '稳健' },
-        { valid: true, isLoading: false, dailyProfit: -2, holdProfit: 5, totalAsset: 50, gztime: '实际净值 (04-11)', group: '高风险' },
+        { valid: true, isLoading: false, estNav: 1.2, dailyProfit: 12, holdProfit: 20, totalAsset: 100, gztime: '2026-04-11 14:00', group: '稳健' },
+        { valid: true, isLoading: false, estNav: 1.5, dailyProfit: -2, holdProfit: 5, totalAsset: 50, gztime: '实际净值 (04-11)', group: '高风险' },
         { valid: false, isLoading: false, dailyProfit: 999, holdProfit: 999, totalAsset: 999, gztime: '--', group: '忽略' },
+        { valid: true, isLoading: false, gztime: '坏快照', group: '忽略' },
     ]);
 
     assert.equal(summary.totalDaily, 10);

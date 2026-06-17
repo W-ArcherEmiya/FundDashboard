@@ -192,7 +192,7 @@
 
         const { totalDaily, totalHold, totalAssets, lastTime, groupStats } = logic.summarizeDisplayData(displayData);
         const distribution = buildAssetDistribution(displayData);
-        const settledCount = displayData.filter(item => !item.isLoading).length;
+        const settledCount = displayData.filter(item => logic.hasCompleteDisplayMetrics(item)).length;
         const unavailableCount = displayData.filter(item => item.isUnavailable).length;
         const groupRows = renderSummaryGroupFolds(displayData, distribution, groupStats);
 
@@ -316,8 +316,8 @@
             const tone = DISTRIBUTION_TONES[index % DISTRIBUTION_TONES.length];
             const dailyProfit = groupStats[item.name] || 0;
             const holdProfit = displayData
-                .filter(entry => entry.valid && !entry.isLoading && !entry.isUnavailable && (entry.group || '默认分组') === item.name)
-                .reduce((sum, entry) => sum + entry.holdProfit, 0);
+                .filter(entry => logic.hasCompleteDisplayMetrics(entry) && (entry.group || '默认分组') === item.name)
+                .reduce((sum, entry) => sum + Number(entry.holdProfit), 0);
             const isOpen = (state.summaryFoldOpenGroups || []).includes(item.name);
 
             return `
@@ -416,7 +416,7 @@
 
     function renderGroupTabSummary(groupName, groupItems) {
         const totalAsset = (groupItems || []).reduce((sum, item) => {
-            if (item.valid && !item.isLoading && !item.isUnavailable && Number.isFinite(Number(item.totalAsset))) {
+            if (logic.hasCompleteDisplayMetrics(item)) {
                 return sum + Number(item.totalAsset);
             }
             return sum;
@@ -627,11 +627,11 @@
         const totals = new Map();
 
         (displayData || []).forEach(item => {
-            if (!item.valid || item.isLoading || item.isUnavailable) return;
+            if (!logic.hasCompleteDisplayMetrics(item)) return;
 
             const groupName = item.group || '默认分组';
             const prev = totals.get(groupName) || { name: groupName, assets: 0, count: 0 };
-            prev.assets += item.totalAsset;
+            prev.assets += Number(item.totalAsset);
             prev.count += 1;
             totals.set(groupName, prev);
         });

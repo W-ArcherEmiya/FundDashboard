@@ -103,6 +103,28 @@ class FundDashboardAppTests(unittest.TestCase):
         self.assertIsNone(payload['snapshot'][1])
         self.assertIn('updated_at', payload)
 
+    def test_sync_save_drops_malformed_snapshot_without_metrics(self):
+        save_response = self.client.post(
+            '/api/sync/save',
+            json={
+                'sync_code': '159357',
+                'data': [
+                    {'code': '000001', 'shares': '1.5', 'cost': '1.2', 'group': '稳健'},
+                ],
+                'snapshot': [
+                    {'code': '000001', 'shares': '1.5', 'cost': '1.2', 'group': '稳健'}
+                ]
+            }
+        )
+
+        self.assertEqual(save_response.status_code, 200)
+        self.assertTrue(save_response.get_json()['success'])
+        self.assertEqual(save_response.get_json()['snapshot_count'], 0)
+
+        load_response = self.client.get('/api/sync/load/159357')
+        payload = load_response.get_json()
+        self.assertEqual(payload['snapshot'], [None])
+
     def test_sync_load_supports_legacy_list_payload(self):
         fund_app.save_data({
             'legacy-code': [
