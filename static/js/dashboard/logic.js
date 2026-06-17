@@ -12,6 +12,23 @@
         return [...new Set((myFunds || []).map(item => item.group || '默认分组'))];
     }
 
+    function isFiniteMetric(value) {
+        return Number.isFinite(Number(value));
+    }
+
+    function hasCompleteDisplayMetrics(item) {
+        return Boolean(
+            item &&
+            item.valid !== false &&
+            !item.isLoading &&
+            !item.isUnavailable &&
+            isFiniteMetric(item.estNav) &&
+            isFiniteMetric(item.dailyProfit) &&
+            isFiniteMetric(item.holdProfit) &&
+            isFiniteMetric(item.totalAsset)
+        );
+    }
+
     function normalizeActiveTab(activeTabId, groups) {
         if (activeTabId === 'tab-summary') {
             return { activeTabId: 'tab-summary', currentActiveGroup: null };
@@ -35,6 +52,9 @@
             const data = (cachedResults || [])[index];
             if (!data) return { ...fund, isLoading: true, valid: true };
             if (data.error || !data.valid) return { ...fund, valid: false };
+            if (!data.isUnavailable && !hasCompleteDisplayMetrics(data)) {
+                return { ...fund, isLoading: true, valid: true };
+            }
             return data;
         });
     }
@@ -47,10 +67,10 @@
         let groupStats = {};
 
         (displayData || []).forEach(data => {
-            if (data.valid && !data.isLoading && !data.isUnavailable) {
-                totalDaily += data.dailyProfit;
-                totalHold += data.holdProfit;
-                totalAssets += data.totalAsset;
+            if (hasCompleteDisplayMetrics(data)) {
+                totalDaily += Number(data.dailyProfit);
+                totalHold += Number(data.holdProfit);
+                totalAssets += Number(data.totalAsset);
 
                 if (lastTime === '--:--' || data.gztime.includes(':') || data.gztime.includes('更新') || data.gztime.includes('实际')) {
                     lastTime = data.gztime;
@@ -181,6 +201,7 @@
 
     return {
         getGroups,
+        hasCompleteDisplayMetrics,
         normalizeActiveTab,
         buildDisplayData,
         summarizeDisplayData,

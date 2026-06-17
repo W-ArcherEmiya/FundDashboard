@@ -229,6 +229,11 @@ def validate_sync_snapshot(value, funds_data):
             if number is not None:
                 snapshot[field] = number
 
+        required_metrics = ('estNav', 'dailyProfit', 'holdProfit', 'totalAsset')
+        if not snapshot['isUnavailable'] and not all(field in snapshot for field in required_metrics):
+            normalized.append(None)
+            continue
+
         normalized.append(snapshot)
 
     return normalized, None
