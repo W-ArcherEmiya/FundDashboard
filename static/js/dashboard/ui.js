@@ -828,13 +828,13 @@
             ? ''
             : `<div class="import-row-warning">${hasCode ? '未能反推份额，请检查代码或手动填写。' : (hasSuggestions ? '存在多个相似候选，请选择正确基金。' : '无法匹配基金代码，请输入代码后重新计算份额和成本。')}</div>`;
         const matchStatus = hasCode ? utils.escapeHtml(candidate.code) : (hasSuggestions ? '待选择候选' : '无法匹配');
-        const holdingStatus = candidate.existing ? '已持仓' : '新增';
         const amountText = candidate.amount ? utils.escapeHtml(candidate.amount) : '--';
         const holdProfitText = candidate.holdProfit ? utils.escapeHtml(candidate.holdProfit) : '--';
         const group = candidate.group || getDefaultImportGroup();
+        const rowClass = candidate.existing ? 'import-row-existing' : 'import-row-new';
 
         return `
-            <article class="import-row" data-import-index="${index}">
+            <article class="import-row ${rowClass}" data-import-index="${index}">
                 <label class="import-row-check">
                     <input type="checkbox" class="import-select" ${candidate.selected ? 'checked' : ''}>
                 </label>
@@ -843,7 +843,6 @@
                         <div class="import-row-identity">
                             <div class="import-row-title">
                                 <div class="import-row-name">${utils.escapeHtml(candidate.name)}</div>
-                                <span class="import-holding-status">${holdingStatus}</span>
                                 <span class="import-group-badge">${utils.escapeHtml(group)}</span>
                             </div>
                             <div class="import-row-meta">${matchStatus}</div>
@@ -893,6 +892,7 @@
                 <div class="import-bulk-main">
                     <label class="import-select-all" for="importSelectAll">全选</label>
                     <span class="import-selected-count" id="importSelectedCount">已选 ${selectedCount} 项</span>
+                    <span class="import-total-count">共 ${candidates.length} 项</span>
                     <label class="import-bulk-group">
                         <span>分组到</span>
                         <select class="form-select import-bulk-group-select" id="importBulkGroup" ${selectedCount ? '' : 'disabled'}>
@@ -941,21 +941,21 @@
                         <label class="form-label form-label-soft">基金代码</label>
                         <input type="text" inputmode="numeric" maxlength="6" class="form-control import-code" value="${utils.escapeHtml(candidate.code || '')}" placeholder="6位代码">
                     </div>
-                    <div class="import-row-field">
+                    <div class="import-row-field import-shares-field">
                         <label class="form-label form-label-soft">持仓份额（份）</label>
                         <div class="import-unit-control">
                             <input type="number" class="form-control import-shares" value="${utils.escapeHtml(candidate.shares || '')}" placeholder="手动填写">
                             <span class="import-unit-addon">份</span>
                         </div>
                     </div>
-                    <div class="import-row-field">
+                    <div class="import-row-field import-cost-field">
                         <label class="form-label form-label-soft">单位成本（元）</label>
                         <div class="import-unit-control">
                             <input type="number" class="form-control import-cost" value="${utils.escapeHtml(candidate.cost || '')}" placeholder="选填">
                             <span class="import-unit-addon">元</span>
                         </div>
                     </div>
-                    <div class="import-row-field">
+                    <div class="import-row-field import-group-field">
                         <label class="form-label form-label-soft">所属投资分组</label>
                         <div class="import-select-control">
                             <select class="form-select import-group">
