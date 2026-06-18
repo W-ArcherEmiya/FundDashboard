@@ -1,6 +1,10 @@
 import unittest
+from datetime import datetime, timezone
 
 from fund_refresh import build_snapshot_item
+
+
+SAME_DAY_HISTORY_MS = int(datetime(2026, 4, 11, 15, 0, tzinfo=timezone.utc).timestamp() * 1000)
 
 
 class FundRefreshTests(unittest.TestCase):
@@ -16,6 +20,33 @@ class FundRefreshTests(unittest.TestCase):
         self.assertEqual(item['estNav'], 1.15)
         self.assertAlmostEqual(item['dailyProfit'], 0.5)
         self.assertAlmostEqual(item['holdProfit'], -1)
+
+    def test_build_snapshot_item_keeps_same_day_settlement_estimated_before_cutoff(self):
+        item = build_snapshot_item(
+            {'code': '000001', 'shares': '10', 'cost': '1.0', 'group': '稳健'},
+            {'name': '基金A', 'latest': 1.08, 'prev': 1.0, 'dateMs': SAME_DAY_HISTORY_MS},
+            {'name': '基金A', 'gsz': '1.20', 'gszzl': '20.00', 'gztime': '2026-04-11 14:35', 'dwjz': '1.00'},
+            now=datetime(2026, 4, 11, 14, 30, tzinfo=timezone.utc),
+        )
+
+        self.assertFalse(item['isActual'])
+        self.assertEqual(item['gztime'], '2026-04-11 14:35')
+        self.assertEqual(item['estNav'], 1.2)
+        self.assertAlmostEqual(item['dailyProfit'], 2)
+        self.assertAlmostEqual(item['holdProfit'], 0)
+
+    def test_build_snapshot_item_accepts_same_day_settlement_after_cutoff(self):
+        item = build_snapshot_item(
+            {'code': '000001', 'shares': '10', 'cost': '1.0', 'group': '稳健'},
+            {'name': '基金A', 'latest': 1.08, 'prev': 1.0, 'dateMs': SAME_DAY_HISTORY_MS},
+            {'name': '基金A', 'gsz': '1.20', 'gszzl': '20.00', 'gztime': '2026-04-11 14:35', 'dwjz': '1.00'},
+            now=datetime(2026, 4, 11, 15, 0, tzinfo=timezone.utc),
+        )
+
+        self.assertTrue(item['isActual'])
+        self.assertEqual(item['gztime'], '实际净值(04-11)')
+        self.assertAlmostEqual(item['dailyProfit'], 0.8)
+        self.assertAlmostEqual(item['holdProfit'], 0.8)
 
     def test_build_snapshot_item_handles_money_fund_income(self):
         item = build_snapshot_item(
