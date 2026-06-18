@@ -1316,6 +1316,13 @@ button {
     white-space: nowrap;
 }
 
+.import-total-count {
+    color: var(--lark-text-meta);
+    font-size: 12px;
+    line-height: 1;
+    white-space: nowrap;
+}
+
 .import-bulk-group {
     display: inline-flex;
     align-items: center;
@@ -1482,17 +1489,12 @@ button {
     line-height: 1.35;
 }
 
-.import-holding-status {
-    display: inline-flex;
-    align-items: center;
-    min-height: 20px;
-    border-radius: 999px;
-    background: #F2F3F5;
-    color: var(--lark-text-body);
-    padding: 2px 8px;
-    font-size: 11px;
-    line-height: 1.2;
-    white-space: nowrap;
+.import-row-existing .import-row-name {
+    color: var(--lark-text-meta);
+}
+
+.import-row-new .import-row-name {
+    color: var(--lark-text-title);
 }
 
 .import-group-badge {
@@ -2861,24 +2863,46 @@ button {
         gap: 8px;
     }
 
+    .import-footer-btn-secondary {
+        background: transparent;
+        color: var(--lark-text-body);
+        padding: 0 8px;
+    }
+
     .import-footer-btn {
-        min-height: 38px;
+        min-height: 44px;
         padding: 0 12px;
     }
 
+    .import-result-head {
+        display: none;
+    }
+
+    .import-bulk-bar {
+        margin-bottom: 8px;
+        padding: 0 11px;
+    }
+
     .import-bulk-main {
-        flex-wrap: wrap;
+        display: grid;
+        grid-template-columns: auto auto minmax(0, 1fr);
         gap: 8px 10px;
+        align-items: center;
     }
 
     .import-bulk-group {
-        flex: 1 1 100%;
+        display: grid;
+        grid-column: 1 / -1;
+        grid-template-columns: auto minmax(0, 1fr);
         margin-left: 0;
+        gap: 8px;
+        width: 100%;
     }
 
     .import-bulk-group-select {
-        flex: 1 1 auto;
+        width: 100%;
         min-width: 0;
+        min-height: 36px;
     }
 
     #importModal .import-list {
@@ -2911,13 +2935,6 @@ button {
         font-size: 13px;
     }
 
-    .import-holding-status {
-        flex: 0 0 auto;
-        min-height: 18px;
-        padding: 1px 7px;
-        font-size: 10px;
-    }
-
     .import-row-meta {
         margin-top: 2px;
         overflow: hidden;
@@ -2933,11 +2950,11 @@ button {
     }
 
     .import-row-metric-label {
-        font-size: 10px;
+        display: none;
     }
 
     .import-row-metric-value {
-        margin-top: 2px;
+        margin-top: 0;
         font-size: 12px;
     }
 
@@ -2946,23 +2963,103 @@ button {
         grid-template-columns: minmax(0, 1fr);
     }
 
+    .import-edit-panel {
+        border: 0;
+        border-radius: 0;
+        padding: 0;
+    }
+
+    .import-edit-head {
+        margin-bottom: 12px;
+    }
+
     .import-edit-fields {
         grid-column: auto;
-        grid-template-columns: minmax(0, 1fr);
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+    }
+
+    .import-code-field {
+        order: 1;
+    }
+
+    .import-group-field {
+        order: 2;
+    }
+
+    .import-shares-field {
+        order: 3;
+    }
+
+    .import-cost-field {
+        order: 4;
+    }
+
+    .import-row-field .form-label {
+        font-size: 12px;
+    }
+
+    .import-row-field .form-control,
+    .import-select-control .form-select {
+        min-height: 38px;
+        font-size: 14px;
+    }
+
+    .import-unit-addon {
+        min-width: 34px;
     }
 
     .import-edit-summary {
-        display: grid;
-        gap: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        margin-top: 14px;
+        border-radius: 12px;
+        padding: 12px;
     }
 
     .import-edit-summary-value {
-        text-align: left;
+        text-align: right;
+        flex: 0 0 auto;
+    }
+
+    .import-edit-summary-label {
+        display: none;
+    }
+
+    .import-edit-formula {
+        margin-top: 0;
+        gap: 5px;
+        font-size: 13px;
+    }
+
+    .import-edit-factor {
+        font-size: 15px;
+    }
+
+    .import-edit-summary-value strong {
+        margin-top: 0;
+        font-size: 18px;
     }
 
     .import-edit-actions {
-        display: grid;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
         gap: 12px;
+        margin-top: 16px;
+    }
+
+    .import-remove-btn {
+        min-height: 34px;
+        font-size: 12px;
+    }
+
+    .import-edit-save-btn {
+        min-height: 44px;
+        padding: 0 16px;
+        font-size: 14px;
     }
 
     .import-remove-confirm {
@@ -3004,5 +3101,27 @@ button {
         max-width: none;
         overflow: visible;
         text-overflow: clip;
+    }
+}
+
+@media (max-width: 359.98px) {
+    .import-edit-fields {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .import-code-field,
+    .import-group-field,
+    .import-shares-field,
+    .import-cost-field {
+        order: initial;
+    }
+
+    .import-edit-summary {
+        display: grid;
+        text-align: left;
+    }
+
+    .import-edit-summary-value {
+        text-align: left;
     }
 }
