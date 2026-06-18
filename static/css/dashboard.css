@@ -1334,30 +1334,95 @@ button {
 .import-bulk-group {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
+    position: relative;
     margin: 0 0 0 auto;
-    color: var(--lark-text-meta);
-    font-size: 12px;
-    line-height: 1;
-    white-space: nowrap;
 }
 
-.import-bulk-group-select {
+.import-bulk-group-trigger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
     width: auto;
     min-width: 112px;
     min-height: 32px;
-    border-color: var(--divider-light);
+    border: 1px solid var(--divider-light);
     border-radius: 9px;
     padding: 3px 30px 3px 10px;
     font-size: 13px;
     color: var(--lark-text-title);
     background-color: #FFFFFF;
+    line-height: 1;
+    white-space: nowrap;
+    cursor: pointer;
 }
 
-.import-bulk-group-select:disabled {
+.import-bulk-group-trigger i {
+    position: absolute;
+    right: 10px;
+    font-size: 12px;
+    color: var(--lark-text-secondary);
+    transition: transform 0.18s ease;
+}
+
+.import-bulk-group-trigger[aria-expanded="true"] i {
+    transform: rotate(180deg);
+}
+
+.import-bulk-group-trigger:disabled {
     background-color: #F5F6F7;
     color: var(--lark-text-placeholder);
     cursor: not-allowed;
+}
+
+.import-bulk-group-menu {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    z-index: 30;
+    width: 176px;
+    border: 1px solid var(--divider-light);
+    border-radius: 10px;
+    background: #FFFFFF;
+    box-shadow: 0 14px 32px rgba(15, 23, 42, 0.12);
+    padding: 6px;
+}
+
+.import-bulk-group-options {
+    display: grid;
+    gap: 2px;
+    max-height: 180px;
+    overflow-y: auto;
+}
+
+.import-bulk-group-option {
+    width: 100%;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--lark-text-title);
+    padding: 8px 9px;
+    font-size: 13px;
+    line-height: 1.2;
+    text-align: left;
+}
+
+.import-bulk-group-option:hover,
+.import-bulk-group-option:focus-visible {
+    background: #F5F7FA;
+    color: var(--lark-blue);
+}
+
+.import-bulk-group-custom {
+    border-top: 1px solid var(--divider-light);
+    margin-top: 6px;
+    padding-top: 6px;
+}
+
+.import-bulk-custom-input {
+    min-height: 32px;
+    border-radius: 8px;
+    font-size: 13px;
 }
 
 .import-footer-actions {
@@ -2884,8 +2949,7 @@ button {
     }
 
     .import-selected-count,
-    .import-total-count,
-    .import-bulk-group-label {
+    .import-total-count {
         display: none;
     }
 
@@ -2901,12 +2965,16 @@ button {
         margin-left: 0;
     }
 
-    .import-bulk-group-select {
+    .import-bulk-group-trigger {
         width: 100%;
         min-width: 0;
         min-height: 34px;
         padding-left: 10px;
         padding-right: 28px;
+    }
+
+    .import-bulk-group-menu {
+        width: min(176px, calc(100vw - 32px));
     }
 
     #importModal .import-list {

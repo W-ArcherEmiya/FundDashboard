@@ -20,6 +20,10 @@
     });
 
     document.addEventListener('click', event => {
+        if (!event.target.closest('#importBulkGroupRoot')) {
+            app.ui.closeImportBulkGroupMenu();
+        }
+
         const actionEl = event.target.closest('[data-action]');
         if (!actionEl) return;
 
@@ -69,6 +73,12 @@
             case 'add-import-selected':
                 app.ui.addImportSelected();
                 break;
+            case 'toggle-import-bulk-group':
+                app.ui.toggleImportBulkGroupMenu();
+                break;
+            case 'apply-import-bulk-group':
+                app.ui.applyImportBulkGroup(actionEl.dataset.group);
+                break;
             case 'edit-import-row':
                 app.ui.editImportCandidate(Number(actionEl.dataset.importIndex));
                 break;
@@ -100,11 +110,23 @@
                 app.ui.deleteFund();
                 break;
         }
+
     });
 
     document.addEventListener('input', event => {
         if (event.target.classList.contains('import-shares') || event.target.classList.contains('import-cost')) {
             app.ui.handleImportEditInput();
+        }
+    });
+
+    document.addEventListener('keydown', event => {
+        if (event.target.id === 'importBulkCustomInput' && event.key === 'Enter') {
+            event.preventDefault();
+            app.ui.applyImportCustomGroup();
+        }
+
+        if (event.key === 'Escape') {
+            app.ui.closeImportBulkGroupMenu();
         }
     });
 
@@ -120,10 +142,6 @@
 
         if (event.target.classList.contains('import-select')) {
             app.ui.handleImportSelectionChange();
-        }
-
-        if (event.target.id === 'importBulkGroup') {
-            app.ui.applyImportBulkGroup(event.target.value);
         }
 
         if (event.target.classList.contains('import-suggestion')) {
