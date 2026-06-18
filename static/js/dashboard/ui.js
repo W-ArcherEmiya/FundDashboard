@@ -893,8 +893,9 @@
                     <label class="import-select-all" for="importSelectAll">全选</label>
                     <span class="import-selected-count" id="importSelectedCount">已选 ${selectedCount} 项</span>
                     <span class="import-total-count">共 ${candidates.length} 项</span>
+                    <span class="import-compact-count" id="importCompactCount">${selectedCount}/${candidates.length}</span>
                     <label class="import-bulk-group">
-                        <span>分组到</span>
+                        <span class="import-bulk-group-label">分组到</span>
                         <select class="form-select import-bulk-group-select" id="importBulkGroup" ${selectedCount ? '' : 'disabled'}>
                             <option value="">选择分组</option>
                             ${groupOptions}
@@ -1344,8 +1345,10 @@
             ? state.importCandidates.filter(candidate => candidate.selected).length
             : checkedCount;
         const countEl = document.getElementById('importSelectedCount');
+        const compactCountEl = document.getElementById('importCompactCount');
         const groupSelect = document.getElementById('importBulkGroup');
         if (countEl) countEl.textContent = `已选 ${selectedCount} 项`;
+        if (compactCountEl) compactCountEl.textContent = `${selectedCount}/${state.importCandidates.length}`;
         if (groupSelect) {
             groupSelect.disabled = selectedCount === 0;
             if (selectedCount === 0) groupSelect.value = '';
