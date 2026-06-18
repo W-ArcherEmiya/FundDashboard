@@ -897,8 +897,8 @@
                     <label class="import-bulk-group">
                         <span class="import-bulk-group-label">分组到</span>
                         <select class="form-select import-bulk-group-select" id="importBulkGroup" ${selectedCount ? '' : 'disabled'}>
-                            <option value="">选择分组</option>
                             ${groupOptions}
+                            <option value="__custom__">自定义分组名称...</option>
                         </select>
                     </label>
                 </div>
@@ -930,10 +930,6 @@
                     </button>
                     <div class="import-edit-title">
                         <div class="import-row-name">${utils.escapeHtml(candidate.name)}</div>
-                    </div>
-                    <div class="import-edit-live-status" aria-label="算式实时重算已就绪">
-                        <span class="import-live-dot" aria-hidden="true"></span>
-                        <span>实时重算</span>
                     </div>
                 </div>
                 ${buildImportSuggestionControl(candidate, index)}
@@ -989,7 +985,12 @@
                         <span>移除此项</span>
                     </button>
                     <div class="import-edit-action-right">
-                        <button type="button" class="import-edit-save-btn" data-action="save-import-edit">保存并返回列表</button>
+                        <button type="button" class="import-edit-save-btn" data-action="save-import-edit">
+                            <svg class="import-save-icon" viewBox="0 0 24 24" aria-hidden="true">
+                                <path d="M5 4h11l3 3v13H5V4Zm2 2v12h10V8.2L14.8 6H7Zm2 1h5v5H9V7Zm1 8h4v2h-4v-2Z" fill="currentColor"/>
+                            </svg>
+                            <span>保存并返回</span>
+                        </button>
                     </div>
                 </div>
                 <div class="import-remove-confirm d-none" data-remove-confirm="${index}">
@@ -1374,7 +1375,21 @@
 
     function applyImportBulkGroup(group) {
         syncImportRowsToState();
-        const targetGroup = String(group || '').trim();
+        let targetGroup = String(group || '').trim();
+        const groupSelect = document.getElementById('importBulkGroup');
+        if (targetGroup === '__custom__') {
+            const customGroup = window.prompt('请输入自定义分组名称', '');
+            targetGroup = String(customGroup || '').trim();
+            if (!targetGroup) {
+                if (groupSelect) groupSelect.value = '';
+                return;
+            }
+            if (targetGroup.length > 32) {
+                showNotice('分组名称不能超过 32 个字符', 'error', 4000);
+                if (groupSelect) groupSelect.value = '';
+                return;
+            }
+        }
         if (!targetGroup) return;
 
         let changed = 0;
