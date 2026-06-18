@@ -691,7 +691,6 @@
         const input = document.getElementById('importImageInput');
         const status = document.getElementById('importStatus');
         const progress = document.getElementById('importProgress');
-        const bar = document.getElementById('importProgressBar');
         const results = document.getElementById('importResults');
 
         state.importCandidates = [];
@@ -701,7 +700,7 @@
         if (input) input.value = '';
         if (status) status.textContent = '支持批量选择基金持有页截图';
         if (progress) progress.classList.add('d-none');
-        if (bar) bar.style.width = '0%';
+        setImportProgress(0);
         setImportFooterState(false);
         const selectAll = document.getElementById('importSelectAll');
         if (selectAll) {
@@ -712,6 +711,21 @@
             results.innerHTML = '';
             results.classList.add('d-none');
         }
+    }
+
+    function setImportProcessingStatus(phase, currentIndex = 0, total = 1) {
+        const status = document.getElementById('importStatus');
+        if (!status) return;
+
+        const label = phase === 'upload' ? '正在上传' : '正在识别';
+        status.textContent = total > 1 ? `${label} ${currentIndex + 1}/${total}` : label;
+    }
+
+    function setImportProgress(percent) {
+        const bar = document.getElementById('importProgressBar');
+        if (!bar) return;
+        const safePercent = Math.max(0, Math.min(100, Number(percent) || 0));
+        bar.style.width = `${safePercent}%`;
     }
 
     async function fillSharesFromAmount(code, amount) {
@@ -881,7 +895,10 @@
     function buildImportBulkBar(candidates) {
         const selectedCount = candidates.filter(candidate => candidate.selected).length;
         const groupOptions = getImportGroupOptions()
-            .map(option => `<option value="${utils.escapeHtml(option)}">${utils.escapeHtml(option)}</option>`)
+            .map(option => `
+                <button type="button" class="import-bulk-group-option" data-action="apply-import-bulk-group" data-group="${utils.escapeHtml(option)}">
+                    ${utils.escapeHtml(option)}
+                </button>`)
             .join('');
 
         return `
@@ -894,13 +911,20 @@
                     <span class="import-selected-count" id="importSelectedCount">已选 ${selectedCount} 项</span>
                     <span class="import-total-count">共 ${candidates.length} 项</span>
                     <span class="import-compact-count" id="importCompactCount">${selectedCount}/${candidates.length}</span>
-                    <label class="import-bulk-group">
-                        <span class="import-bulk-group-label">分组到</span>
-                        <select class="form-select import-bulk-group-select" id="importBulkGroup" ${selectedCount ? '' : 'disabled'}>
-                            ${groupOptions}
-                            <option value="__custom__">自定义分组名称...</option>
-                        </select>
-                    </label>
+                    <div class="import-bulk-group" id="importBulkGroupRoot">
+                        <button type="button" class="import-bulk-group-trigger" id="importBulkGroup" data-action="toggle-import-bulk-group" aria-haspopup="listbox" aria-expanded="false" ${selectedCount ? '' : 'disabled'}>
+                            <span>选择分组</span>
+                            <i class="bi bi-chevron-down" aria-hidden="true"></i>
+                        </button>
+                        <div class="import-bulk-group-menu d-none" id="importBulkGroupMenu" role="listbox">
+                            <div class="import-bulk-group-options">
+                                ${groupOptions}
+                            </div>
+                            <div class="import-bulk-group-custom">
+                                <input type="text" class="form-control import-bulk-custom-input" id="importBulkCustomInput" placeholder="自定义名称" maxlength="32">
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>`;
     }
@@ -1132,7 +1156,10 @@
 
         for (let index = 0; index < uniqueCandidates.length; index += 1) {
             const candidate = uniqueCandidates[index];
-            if (status) status.textContent = `正在反推份额 ${index + 1}/${uniqueCandidates.length}`;
+            setImportProcessingStatus('recognize', index, uniqueCandidates.length);
+            if (uniqueCandidates.length) {
+                setImportProgress(85 + Math.round(((index + 1) / uniqueCandidates.length) * 12));
+            }
             if (candidate.code && !candidate.shares) {
                 const inferred = await fillSharesFromAmount(candidate.code, candidate.amount);
                 if (inferred) {
@@ -1208,7 +1235,6 @@
 
         const status = document.getElementById('importStatus');
         const progress = document.getElementById('importProgress');
-        const bar = document.getElementById('importProgressBar');
 
         if (files.some(file => !file.type.startsWith('image/'))) {
             showNotice('请选择图片文件', 'error');
@@ -1222,9 +1248,9 @@
             return;
         }
 
-        status.textContent = files.length > 1 ? `正在识别 1/${files.length}...` : '正在识别...';
         progress.classList.remove('d-none');
-        bar.style.width = '8%';
+        setImportProcessingStatus('upload', 0, files.length);
+        setImportProgress(8);
         setImportFooterState(false);
         setImportView('processing');
 
@@ -1234,22 +1260,22 @@
 
             for (let index = 0; index < files.length; index += 1) {
                 const file = files[index];
+                setImportProcessingStatus('upload', index, files.length);
                 const parsed = await app.ocr.recognizeBestAlipayScreenshot(file, (percent, label) => {
                     const currentPercent = Math.max(8, Math.min(100, percent || 0));
-                    const overallPercent = Math.round(((index + currentPercent / 100) / files.length) * 100);
-                    bar.style.width = `${Math.max(8, overallPercent)}%`;
-                    status.textContent = files.length > 1
-                        ? `正在识别 ${index + 1}/${files.length}：${label || `${currentPercent}%`}`
-                        : (label || `正在识别 ${currentPercent}%`);
+                    const phase = String(label || '').includes('上传') ? 'upload' : 'recognize';
+                    const recognitionPercent = Math.round(((index + currentPercent / 100) / files.length) * 84);
+                    const overallPercent = Math.max(8, Math.min(92, recognitionPercent));
+                    setImportProgress(overallPercent);
+                    setImportProcessingStatus(phase, index, files.length);
                 });
 
                 parsedResults.push(parsed);
                 allCandidates.push(...buildCandidatesFromParsed(parsed));
             }
 
-            bar.style.width = '100%';
-
             await hydrateImportCandidates(allCandidates);
+            setImportProgress(100);
 
             if (!state.importCandidates.length) {
                 const diagnostics = buildBatchImportDiagnostics(parsedResults);
@@ -1347,13 +1373,43 @@
             : checkedCount;
         const countEl = document.getElementById('importSelectedCount');
         const compactCountEl = document.getElementById('importCompactCount');
-        const groupSelect = document.getElementById('importBulkGroup');
+        const groupTrigger = document.getElementById('importBulkGroup');
         if (countEl) countEl.textContent = `已选 ${selectedCount} 项`;
         if (compactCountEl) compactCountEl.textContent = `${selectedCount}/${state.importCandidates.length}`;
-        if (groupSelect) {
-            groupSelect.disabled = selectedCount === 0;
-            if (selectedCount === 0) groupSelect.value = '';
+        if (groupTrigger) {
+            groupTrigger.disabled = selectedCount === 0;
+            if (selectedCount === 0) closeImportBulkGroupMenu();
         }
+    }
+
+    function toggleImportBulkGroupMenu() {
+        const trigger = document.getElementById('importBulkGroup');
+        const menu = document.getElementById('importBulkGroupMenu');
+        if (!trigger || !menu || trigger.disabled) return;
+
+        const shouldOpen = menu.classList.contains('d-none');
+        menu.classList.toggle('d-none', !shouldOpen);
+        trigger.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+
+        if (shouldOpen) {
+            const customInput = document.getElementById('importBulkCustomInput');
+            if (customInput) customInput.value = '';
+        }
+    }
+
+    function closeImportBulkGroupMenu() {
+        const trigger = document.getElementById('importBulkGroup');
+        const menu = document.getElementById('importBulkGroupMenu');
+        if (!menu) return;
+        menu.classList.add('d-none');
+        if (trigger) trigger.setAttribute('aria-expanded', 'false');
+    }
+
+    function applyImportCustomGroup() {
+        const customInput = document.getElementById('importBulkCustomInput');
+        const targetGroup = String(customInput?.value || '').trim();
+        if (!targetGroup) return;
+        applyImportBulkGroup(targetGroup);
     }
 
     function handleImportSelectionChange() {
@@ -1375,20 +1431,10 @@
 
     function applyImportBulkGroup(group) {
         syncImportRowsToState();
-        let targetGroup = String(group || '').trim();
-        const groupSelect = document.getElementById('importBulkGroup');
-        if (targetGroup === '__custom__') {
-            const customGroup = window.prompt('请输入自定义分组名称', '');
-            targetGroup = String(customGroup || '').trim();
-            if (!targetGroup) {
-                if (groupSelect) groupSelect.value = '';
-                return;
-            }
-            if (targetGroup.length > 32) {
-                showNotice('分组名称不能超过 32 个字符', 'error', 4000);
-                if (groupSelect) groupSelect.value = '';
-                return;
-            }
+        const targetGroup = String(group || '').trim();
+        if (targetGroup.length > 32) {
+            showNotice('分组名称不能超过 32 个字符', 'error', 4000);
+            return;
         }
         if (!targetGroup) return;
 
@@ -1405,6 +1451,7 @@
             return;
         }
 
+        closeImportBulkGroupMenu();
         renderImportResults(state.importCandidates);
         showNotice(`已将 ${changed} 只基金分组到「${targetGroup}」`, 'success', 3000);
     }
@@ -1730,6 +1777,9 @@
         removeImportCandidate,
         handleImportSelectionChange,
         toggleImportSelectAll,
+        toggleImportBulkGroupMenu,
+        closeImportBulkGroupMenu,
+        applyImportCustomGroup,
         applyImportBulkGroup,
         recalculateImportCandidate,
         addImportSelected,
