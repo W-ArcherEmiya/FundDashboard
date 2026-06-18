@@ -1323,6 +1323,14 @@ button {
     white-space: nowrap;
 }
 
+.import-compact-count {
+    display: none;
+    color: var(--lark-text-meta);
+    font-size: 12px;
+    line-height: 1;
+    white-space: nowrap;
+}
+
 .import-bulk-group {
     display: inline-flex;
     align-items: center;
@@ -2886,23 +2894,34 @@ button {
     .import-bulk-main {
         display: grid;
         grid-template-columns: auto auto minmax(0, 1fr);
-        gap: 8px 10px;
+        gap: 8px;
         align-items: center;
     }
 
+    .import-selected-count,
+    .import-total-count,
+    .import-bulk-group-label {
+        display: none;
+    }
+
+    .import-compact-count {
+        display: inline;
+    }
+
     .import-bulk-group {
-        display: grid;
-        grid-column: 1 / -1;
-        grid-template-columns: auto minmax(0, 1fr);
+        display: block;
+        grid-column: 3 / 4;
+        justify-self: end;
+        width: min(128px, 100%);
         margin-left: 0;
-        gap: 8px;
-        width: 100%;
     }
 
     .import-bulk-group-select {
         width: 100%;
         min-width: 0;
-        min-height: 36px;
+        min-height: 34px;
+        padding-left: 10px;
+        padding-right: 28px;
     }
 
     #importModal .import-list {
