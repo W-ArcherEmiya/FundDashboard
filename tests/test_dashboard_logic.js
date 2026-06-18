@@ -90,6 +90,35 @@ runTest('buildFundResult falls back to actual settlement when realtime data is s
     assertAlmostEqual(result.holdProfit, 0.8);
 });
 
+runTest('buildFundResult keeps same-day settlement as estimate before 23:00 Beijing time', () => {
+    const result = logic.buildFundResult(
+        { code: '000001', shares: '10', cost: '1.0', group: '稳健' },
+        { name: '基金A', latest: 1.08, prev: 1.0, dateMs: Date.UTC(2026, 3, 11, 15, 0, 0) },
+        { name: '基金A', gsz: '1.20', gszzl: '20.00', gztime: '2026-04-11 14:35', dwjz: '1.00' },
+        { now: new Date(Date.UTC(2026, 3, 11, 14, 30, 0)) }
+    );
+
+    assert.equal(result.isActual, false);
+    assert.equal(result.gztime, '2026-04-11 14:35');
+    assert.equal(result.estNav, 1.2);
+    assertAlmostEqual(result.dailyProfit, 2);
+    assertAlmostEqual(result.holdProfit, 0);
+});
+
+runTest('buildFundResult accepts same-day settlement after 23:00 Beijing time', () => {
+    const result = logic.buildFundResult(
+        { code: '000001', shares: '10', cost: '1.0', group: '稳健' },
+        { name: '基金A', latest: 1.08, prev: 1.0, dateMs: Date.UTC(2026, 3, 11, 15, 0, 0) },
+        { name: '基金A', gsz: '1.20', gszzl: '20.00', gztime: '2026-04-11 14:35', dwjz: '1.00' },
+        { now: new Date(Date.UTC(2026, 3, 11, 15, 0, 0)) }
+    );
+
+    assert.equal(result.isActual, true);
+    assert.equal(result.gztime, '实际净值 (04-11)');
+    assertAlmostEqual(result.dailyProfit, 0.8);
+    assertAlmostEqual(result.holdProfit, 0.8);
+});
+
 runTest('buildFundResult marks backup mode when only historical settlement exists', () => {
     const result = logic.buildFundResult(
         { code: '007721', shares: '5', cost: '2', group: '美股' },

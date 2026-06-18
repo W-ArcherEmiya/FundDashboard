@@ -93,7 +93,30 @@
         return { currentGroupName, groupItems };
     }
 
-    function buildFundResult(fund, hist, rt) {
+    function getBeijingDateParts(value) {
+        const date = value instanceof Date ? value : new Date(value);
+        const bjTime = new Date(date.getTime() + 8 * 3600 * 1000);
+        return {
+            year: bjTime.getUTCFullYear(),
+            month: bjTime.getUTCMonth() + 1,
+            day: bjTime.getUTCDate(),
+            hour: bjTime.getUTCHours()
+        };
+    }
+
+    function formatBeijingDate(parts) {
+        return parts.year + '-' +
+            String(parts.month).padStart(2, '0') + '-' +
+            String(parts.day).padStart(2, '0');
+    }
+
+    function isSameDaySettlementEligible(actualDateStr, now = new Date()) {
+        const nowParts = getBeijingDateParts(now);
+        const todayStr = formatBeijingDate(nowParts);
+        return actualDateStr !== todayStr || nowParts.hour >= 23;
+    }
+
+    function buildFundResult(fund, hist, rt, options = {}) {
         if (!hist && !rt) {
             return {
                 code: fund.code,
@@ -111,10 +134,9 @@
         const cost = parseFloat(fund.cost) || 0;
 
         if (hist) {
-            const bjTime = new Date(hist.dateMs + 8 * 3600 * 1000);
-            const actualDateStr = bjTime.getUTCFullYear() + '-' +
-                String(bjTime.getUTCMonth() + 1).padStart(2, '0') + '-' +
-                String(bjTime.getUTCDate()).padStart(2, '0');
+            const actualParts = getBeijingDateParts(hist.dateMs);
+            const actualDateStr = formatBeijingDate(actualParts);
+            const settlementEligible = isSameDaySettlementEligible(actualDateStr, options.now || new Date());
 
             let currentNav;
             let prevNav;
@@ -123,8 +145,8 @@
             let timeStr;
 
             if (hist.isMoneyFund) {
-                const badgeDate = String(bjTime.getUTCMonth() + 1).padStart(2, '0') + '-' +
-                    String(bjTime.getUTCDate()).padStart(2, '0');
+                const badgeDate = String(actualParts.month).padStart(2, '0') + '-' +
+                    String(actualParts.day).padStart(2, '0');
                 const millionIncome = Number(hist.millionIncome);
                 const dailyProfit = Number.isFinite(millionIncome) ? (millionIncome * shares / 10000) : 0;
 
@@ -146,23 +168,29 @@
             }
 
             const gzDateStr = rt && rt.gztime ? rt.gztime.split(' ')[0] : '';
-            if (rt && gzDateStr > actualDateStr) {
+            if (rt && (gzDateStr > actualDateStr || !settlementEligible)) {
                 currentNav = parseFloat(rt.gsz);
-                prevNav = hist.latest;
+                prevNav = settlementEligible ? hist.latest : hist.prev;
                 rate = parseFloat(rt.gszzl);
                 timeStr = rt.gztime;
+                isActual = false;
+            } else if (!settlementEligible) {
+                currentNav = hist.prev;
+                prevNav = hist.prev;
+                rate = 0;
+                timeStr = '等待正式净值';
                 isActual = false;
             } else {
                 currentNav = hist.latest;
                 prevNav = hist.prev;
                 rate = prevNav > 0 ? ((currentNav - prevNav) / prevNav * 100) : 0;
-                const badgeDate = String(bjTime.getUTCMonth() + 1).padStart(2, '0') + '-' +
-                    String(bjTime.getUTCDate()).padStart(2, '0');
+                const badgeDate = String(actualParts.month).padStart(2, '0') + '-' +
+                    String(actualParts.day).padStart(2, '0');
                 timeStr = '实际净值 (' + badgeDate + ')';
                 isActual = true;
             }
 
-            const holdNav = isActual ? currentNav : hist.latest;
+            const holdNav = isActual ? currentNav : (settlementEligible ? hist.latest : hist.prev);
 
             return {
                 code: fund.code,
