@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-    {% set asset_version = '20260617-snapshot-metrics-guard' %}
+    {% set asset_version = '20260618-import-head-align' %}
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>资产看板</title>
@@ -90,7 +90,7 @@
     </div>
 </div>
 
-<div class="modal fade" id="importModal" tabindex="-1">
+<div class="modal fade" id="importModal" tabindex="-1" data-view="upload">
     <div class="modal-dialog modal-dialog-centered modal-lg">
         <div class="modal-content border-0 shadow-lg modal-shell">
             <div class="modal-header border-bottom-0 pt-4 px-4">
@@ -101,12 +101,11 @@
                 <div class="screenshot-import" id="screenshotImportArea">
                     <div class="screenshot-import-head">
                         <div>
-                            <div class="screenshot-import-title">支付宝基金持有页</div>
-                            <div class="screenshot-import-status" id="importStatus">选择一张或多张截图后识别基金名称、匹配代码，并用金额/净值反推份额。</div>
+                            <div class="screenshot-import-status" id="importStatus">支持批量选择基金持有页截图</div>
                         </div>
                         <label class="screenshot-import-btn" for="importImageInput">
                             <i class="bi bi-image"></i>
-                            <span>批量选择</span>
+                            <span>选择截图</span>
                         </label>
                         <input type="file" id="importImageInput" class="d-none" accept="image/*" multiple>
                     </div>
@@ -116,9 +115,15 @@
                 </div>
                 <div class="import-results d-none" id="importResults"></div>
             </div>
-            <div class="modal-footer border-top-0 px-4 pb-4">
-                <button type="button" class="btn btn-light" data-action="reset-import">重新选择</button>
-                <button type="button" class="btn px-4 btn-save-fund" data-action="add-import-selected">确认归类</button>
+            <div class="modal-footer border-top-0 px-4 pb-4 d-none" id="importFooter">
+                <div class="import-footer-actions">
+                    <button type="button" class="import-footer-btn import-footer-btn-secondary" data-action="reset-import" id="btnImportReset">
+                        <span>重新选择</span>
+                    </button>
+                    <button type="button" class="import-footer-btn import-footer-btn-primary" data-action="add-import-selected" id="btnImportConfirm">
+                        <span>确认归类</span>
+                    </button>
+                </div>
             </div>
         </div>
     </div>

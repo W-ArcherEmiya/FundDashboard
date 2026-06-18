@@ -14,6 +14,7 @@
         importModal: null,
         importCandidates: [],
         importAutoUpdatedCount: 0,
+        importEditingIndex: null,
         refreshInFlight: false,
         refreshPending: false,
         refreshPendingOptions: null,

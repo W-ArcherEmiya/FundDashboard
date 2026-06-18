@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parent.parent
 COMMANDS = [
     [sys.executable, "-m", "unittest", "discover", "-s", "tests", "-v"],
     ["node", "tests/test_dashboard_logic.js"],
+    ["node", "tests/test_ocr_parser.js"],
 ]
 
 

@@ -675,6 +675,18 @@
         state.importModal.show();
     }
 
+    function setImportFooterState(visible, confirmVisible = visible) {
+        const footer = document.getElementById('importFooter');
+        const confirm = document.getElementById('btnImportConfirm');
+        if (footer) footer.classList.toggle('d-none', !visible);
+        if (confirm) confirm.classList.toggle('d-none', !confirmVisible);
+    }
+
+    function setImportView(view) {
+        const modal = document.getElementById('importModal');
+        if (modal) modal.dataset.view = view;
+    }
+
     function resetImportModal() {
         const input = document.getElementById('importImageInput');
         const status = document.getElementById('importStatus');
@@ -684,10 +696,18 @@
 
         state.importCandidates = [];
         state.importAutoUpdatedCount = 0;
+        state.importEditingIndex = null;
+        setImportView('upload');
         if (input) input.value = '';
-        if (status) status.textContent = '选择一张或多张截图后识别基金名称、匹配代码，并用金额/净值反推份额。';
+        if (status) status.textContent = '支持批量选择基金持有页截图';
         if (progress) progress.classList.add('d-none');
         if (bar) bar.style.width = '0%';
+        setImportFooterState(false);
+        const selectAll = document.getElementById('importSelectAll');
+        if (selectAll) {
+            selectAll.checked = false;
+            selectAll.indeterminate = false;
+        }
         if (results) {
             results.innerHTML = '';
             results.classList.add('d-none');
@@ -797,61 +817,191 @@
         if (source === 'selectedCandidate') return '手选候选';
         if (source === 'manualCode') return '手动代码';
         if (source === 'detail') return '详情页';
+        if (source === 'fields') return '字段抽取';
         return '';
     }
 
     function buildImportRow(candidate, index) {
-        const group = candidate.group || getDefaultImportGroup();
         const hasCode = /^\d{6}$/.test(candidate.code || '');
         const hasSuggestions = Array.isArray(candidate.suggestions) && candidate.suggestions.length > 0 && !hasCode;
         const disabledNote = candidate.shares
             ? ''
             : `<div class="import-row-warning">${hasCode ? '未能反推份额，请检查代码或手动填写。' : (hasSuggestions ? '存在多个相似候选，请选择正确基金。' : '无法匹配基金代码，请输入代码后重新计算份额和成本。')}</div>`;
         const matchStatus = hasCode ? utils.escapeHtml(candidate.code) : (hasSuggestions ? '待选择候选' : '无法匹配');
-        const existingBadge = candidate.existing ? ' · 已持仓' : '';
-        const sourceLabel = getImportSourceLabel(candidate);
-        const sourceBadge = sourceLabel ? `<span class="import-source-badge">${utils.escapeHtml(sourceLabel)}</span>` : '';
+        const holdingStatus = candidate.existing ? '已持仓' : '新增';
+        const amountText = candidate.amount ? utils.escapeHtml(candidate.amount) : '--';
+        const holdProfitText = candidate.holdProfit ? utils.escapeHtml(candidate.holdProfit) : '--';
+        const group = candidate.group || getDefaultImportGroup();
 
         return `
             <article class="import-row" data-import-index="${index}">
                 <label class="import-row-check">
                     <input type="checkbox" class="import-select" ${candidate.selected ? 'checked' : ''}>
                 </label>
-                <div class="import-row-main">
-                    <div class="import-row-title">
-                        <div class="import-row-name">${utils.escapeHtml(candidate.name)}</div>
-                        ${sourceBadge}
-                    </div>
-                    <div class="import-row-meta">
-                        ${matchStatus}
-                        ${existingBadge}
-                        ${candidate.amount ? ` · 金额 ${utils.escapeHtml(candidate.amount)}` : ''}
-                        ${candidate.holdProfit ? ` · 持有收益 ${utils.escapeHtml(candidate.holdProfit)}` : ''}
-                        ${candidate.nav ? ` · 净值 ${utils.escapeHtml(candidate.nav)}` : ''}
+                <button type="button" class="import-row-main import-row-open" data-action="edit-import-row" data-import-index="${index}">
+                    <div class="import-row-summary">
+                        <div class="import-row-identity">
+                            <div class="import-row-title">
+                                <div class="import-row-name">${utils.escapeHtml(candidate.name)}</div>
+                                <span class="import-holding-status">${holdingStatus}</span>
+                                <span class="import-group-badge">${utils.escapeHtml(group)}</span>
+                            </div>
+                            <div class="import-row-meta">${matchStatus}</div>
+                        </div>
+                        <div class="import-row-metrics" aria-label="识别金额概览">
+                            <div class="import-row-metric">
+                                <div class="import-row-metric-label">金额</div>
+                                <div class="import-row-metric-value">${amountText}</div>
+                            </div>
+                            <div class="import-row-metric">
+                                <div class="import-row-metric-label">持有收益</div>
+                                <div class="import-row-metric-value">${holdProfitText}</div>
+                            </div>
+                        </div>
                     </div>
                     ${disabledNote}
-                    ${buildImportSuggestionControl(candidate, index)}
+                </button>
+            </article>`;
+    }
+
+    function getImportGroupOptions(currentGroup) {
+        const groups = new Set(['默认分组']);
+        state.myFunds.forEach(fund => {
+            const group = String(fund.group || '').trim();
+            if (group) groups.add(group);
+        });
+        state.importCandidates.forEach(candidate => {
+            const group = String(candidate.group || '').trim();
+            if (group) groups.add(group);
+        });
+        if (state.currentActiveGroup) groups.add(state.currentActiveGroup);
+        if (currentGroup) groups.add(currentGroup);
+        return Array.from(groups);
+    }
+
+    function buildImportBulkBar(candidates) {
+        const selectedCount = candidates.filter(candidate => candidate.selected).length;
+        const groupOptions = getImportGroupOptions()
+            .map(option => `<option value="${utils.escapeHtml(option)}">${utils.escapeHtml(option)}</option>`)
+            .join('');
+
+        return `
+            <div class="import-bulk-bar" id="importBulkBar">
+                <span class="import-select-all-check">
+                    <input type="checkbox" id="importSelectAll">
+                </span>
+                <div class="import-bulk-main">
+                    <label class="import-select-all" for="importSelectAll">全选</label>
+                    <span class="import-selected-count" id="importSelectedCount">已选 ${selectedCount} 项</span>
+                    <label class="import-bulk-group">
+                        <span>分组到</span>
+                        <select class="form-select import-bulk-group-select" id="importBulkGroup" ${selectedCount ? '' : 'disabled'}>
+                            <option value="">选择分组</option>
+                            ${groupOptions}
+                        </select>
+                    </label>
                 </div>
-                <div class="import-row-field import-code-field">
-                    <label class="form-label form-label-soft">基金代码</label>
-                    <div class="import-code-control">
-                        <input type="text" inputmode="numeric" maxlength="6" class="form-control import-code" value="${utils.escapeHtml(candidate.code || '')}" placeholder="6位代码">
-                        <button type="button" class="btn btn-light import-recalc-btn" data-action="recalc-import-row" data-import-index="${index}">重算</button>
+            </div>`;
+    }
+
+    function buildImportEditPanel(candidate, index) {
+        const group = candidate.group || getDefaultImportGroup();
+        const sharesValue = candidate.shares !== '' && candidate.shares !== undefined ? Number(candidate.shares) : NaN;
+        const costValue = candidate.cost !== '' && candidate.cost !== undefined ? Number(candidate.cost) : NaN;
+        const amountValue = candidate.amount !== '' && candidate.amount !== undefined ? Number(candidate.amount) : NaN;
+        const costAmount = Number.isFinite(sharesValue) && Number.isFinite(costValue)
+            ? sharesValue * costValue
+            : null;
+        const costAmountText = costAmount !== null ? utils.formatAmount(costAmount, { compact: false }) : '--';
+        const amountText = Number.isFinite(amountValue) ? utils.formatAmount(amountValue, { compact: false }) : '--';
+        const sharesText = candidate.shares || '--';
+        const costText = candidate.cost || '--';
+        const groupOptions = getImportGroupOptions(group)
+            .map(option => `<option value="${utils.escapeHtml(option)}" ${option === group ? 'selected' : ''}>${utils.escapeHtml(option)}</option>`)
+            .join('');
+
+        return `
+            <div class="import-edit-panel" data-import-index="${index}">
+                <div class="import-edit-head">
+                    <button type="button" class="import-back-btn" data-action="back-import-list">
+                        <i class="bi bi-chevron-left"></i>
+                        <span>返回</span>
+                    </button>
+                    <div class="import-edit-title">
+                        <div class="import-row-name">${utils.escapeHtml(candidate.name)}</div>
+                    </div>
+                    <div class="import-edit-live-status" aria-label="算式实时重算已就绪">
+                        <span class="import-live-dot" aria-hidden="true"></span>
+                        <span>实时重算</span>
                     </div>
                 </div>
-                <div class="import-row-field">
-                    <label class="form-label form-label-soft">份额</label>
-                    <input type="number" class="form-control import-shares" value="${utils.escapeHtml(candidate.shares || '')}" placeholder="手动填写">
+                ${buildImportSuggestionControl(candidate, index)}
+                <div class="import-row-fields import-edit-fields">
+                    <div class="import-row-field import-code-field">
+                        <label class="form-label form-label-soft">基金代码</label>
+                        <input type="text" inputmode="numeric" maxlength="6" class="form-control import-code" value="${utils.escapeHtml(candidate.code || '')}" placeholder="6位代码">
+                    </div>
+                    <div class="import-row-field">
+                        <label class="form-label form-label-soft">持仓份额（份）</label>
+                        <div class="import-unit-control">
+                            <input type="number" class="form-control import-shares" value="${utils.escapeHtml(candidate.shares || '')}" placeholder="手动填写">
+                            <span class="import-unit-addon">份</span>
+                        </div>
+                    </div>
+                    <div class="import-row-field">
+                        <label class="form-label form-label-soft">单位成本（元）</label>
+                        <div class="import-unit-control">
+                            <input type="number" class="form-control import-cost" value="${utils.escapeHtml(candidate.cost || '')}" placeholder="选填">
+                            <span class="import-unit-addon">元</span>
+                        </div>
+                    </div>
+                    <div class="import-row-field">
+                        <label class="form-label form-label-soft">所属投资分组</label>
+                        <div class="import-select-control">
+                            <select class="form-select import-group">
+                                ${groupOptions}
+                            </select>
+                        </div>
+                    </div>
                 </div>
-                <div class="import-row-field">
-                    <label class="form-label form-label-soft">成本</label>
-                    <input type="number" class="form-control import-cost" value="${utils.escapeHtml(candidate.cost || '')}" placeholder="选填">
+                <div class="import-edit-summary">
+                    <div>
+                        <div class="import-edit-summary-label">持仓成本估算</div>
+                        <div class="import-edit-formula">
+                            <span class="import-edit-factor import-edit-shares-preview">${utils.escapeHtml(sharesText)}</span>
+                            <em class="import-edit-unit">份</em>
+                            <em class="import-edit-operator">×</em>
+                            <span class="import-edit-factor import-edit-cost-preview">${utils.escapeHtml(costText)}</span>
+                            <em class="import-edit-unit">元/份</em>
+                        </div>
+                    </div>
+                    <div class="import-edit-summary-value">
+                        <div class="import-edit-summary-label">估算持仓成本</div>
+                        <strong class="import-edit-total-preview">¥${utils.escapeHtml(costAmountText)}</strong>
+                    </div>
                 </div>
-                <div class="import-row-field">
-                    <label class="form-label form-label-soft">分组</label>
-                    <input type="text" class="form-control import-group" value="${utils.escapeHtml(group)}" placeholder="默认分组">
+                <div class="import-edit-actions">
+                    <button type="button" class="import-remove-btn" data-action="request-remove-import-row" data-import-index="${index}">
+                        <svg class="import-remove-icon" viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M9 4h6l1 2h4v2H4V6h4l1-2Zm1 6v8h2v-8h-2Zm4 0v8h2v-8h-2ZM7 10h2v9h6v-9h2v10a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V10Z" fill="currentColor"/>
+                        </svg>
+                        <span>移除此项</span>
+                    </button>
+                    <div class="import-edit-action-right">
+                        <button type="button" class="import-edit-save-btn" data-action="save-import-edit">保存并返回列表</button>
+                    </div>
                 </div>
-            </article>`;
+                <div class="import-remove-confirm d-none" data-remove-confirm="${index}">
+                    <div>
+                        <div class="import-remove-confirm-title">确认移除此项？</div>
+                        <div class="import-remove-confirm-text">移除后不会导入这条识别结果。</div>
+                    </div>
+                    <div class="import-remove-confirm-actions">
+                        <button type="button" class="import-remove-cancel-btn" data-action="cancel-remove-import-row">取消</button>
+                        <button type="button" class="import-remove-confirm-btn" data-action="confirm-remove-import-row" data-import-index="${index}">确认移除</button>
+                    </div>
+                </div>
+            </div>`;
     }
 
     function renderImportResults(candidates) {
@@ -867,22 +1017,34 @@
                 ${updatedNote}
                 <div class="import-empty">${updatedCount ? '本次截图中的基金已处理完。' : '没有识别到可添加的基金。'}</div>`;
             results.classList.remove('d-none');
+            setImportFooterState(true, false);
+            return;
+        }
+
+        const editingIndex = state.importEditingIndex;
+        if (editingIndex !== null && Number.isInteger(editingIndex) && candidates[editingIndex]) {
+            results.innerHTML = `
+                ${buildImportEditPanel(candidates[editingIndex], editingIndex)}`;
+            results.classList.remove('d-none');
+            setImportFooterState(false);
             return;
         }
 
         results.innerHTML = `
             <div class="import-result-head">
                 <div>
-                    <div class="section-title">已读取基金</div>
-                    <div class="section-subtitle">已持仓基金会自动填入原分组；勾选后确认，选中项会按分组处理。</div>
+                    <div class="section-subtitle">勾选需要导入的基金；点击单行可编辑代码、份额、成本和分组。</div>
                 </div>
                 <div class="section-meta">${candidates.length} 项</div>
             </div>
             ${updatedNote}
+            ${buildImportBulkBar(candidates)}
             <div class="import-list">
                 ${candidates.map(buildImportRow).join('')}
             </div>`;
         results.classList.remove('d-none');
+        updateImportSelectAllState();
+        setImportFooterState(true, true);
     }
 
     function renderImportDiagnostics(parsed) {
@@ -905,6 +1067,7 @@
                 ${textBlock}
             </div>`;
         results.classList.remove('d-none');
+        setImportFooterState(true, false);
     }
 
     async function hydrateImportCandidates(candidates) {
@@ -949,33 +1112,39 @@
                 name: candidate.name || (candidate.code ? `基金 ${candidate.code}` : '无法匹配的基金'),
                 amount: candidate.amount || '',
                 holdProfit: candidate.holdProfit || '',
+                dailyProfit: candidate.dailyProfit || '',
                 type: candidate.type || '',
                 suggestions: Array.isArray(candidate.suggestions) ? candidate.suggestions : [],
                 source: candidate.source || '',
+                fieldSources: candidate.fieldSources || {},
                 unmatched: Boolean(candidate.unmatched || !candidate.code),
                 existing: Boolean(existingFund),
                 group: existingFund ? (existingFund.group || '默认分组') : getDefaultImportGroup(),
-                shares: '',
-                cost: '',
-                nav: '',
-                selected: true
+                shares: candidate.shares || '',
+                cost: candidate.cost || '',
+                nav: candidate.nav || '',
+                rate: candidate.rate || '',
+                selected: false
             });
         });
 
         for (let index = 0; index < uniqueCandidates.length; index += 1) {
             const candidate = uniqueCandidates[index];
             if (status) status.textContent = `正在反推份额 ${index + 1}/${uniqueCandidates.length}`;
-            if (candidate.code) {
+            if (candidate.code && !candidate.shares) {
                 const inferred = await fillSharesFromAmount(candidate.code, candidate.amount);
                 if (inferred) {
                     candidate.shares = inferred.shares;
                     candidate.nav = inferred.nav;
                     candidate.cost = inferCostFromProfit(candidate.amount, candidate.holdProfit, candidate.shares);
                 }
+            } else if (candidate.shares && !candidate.cost) {
+                candidate.cost = inferCostFromProfit(candidate.amount, candidate.holdProfit, candidate.shares);
             }
         }
 
         state.importAutoUpdatedCount = 0;
+        state.importEditingIndex = null;
         state.importCandidates = uniqueCandidates;
         renderImportResults(uniqueCandidates);
         if (status) {
@@ -997,7 +1166,13 @@
                 code: parsed.code,
                 name: parsed.matchedName || `基金 ${parsed.code}`,
                 amount: parsed.amount || '',
+                shares: parsed.shares || '',
+                cost: parsed.cost || '',
                 holdProfit: parsed.holdProfit || '',
+                dailyProfit: parsed.dailyProfit || '',
+                nav: parsed.nav || '',
+                rate: parsed.rate || '',
+                fieldSources: parsed.fieldSources || {},
                 source: 'detail'
             }];
         }
@@ -1048,6 +1223,8 @@
         status.textContent = files.length > 1 ? `正在识别 1/${files.length}...` : '正在识别...';
         progress.classList.remove('d-none');
         bar.style.width = '8%';
+        setImportFooterState(false);
+        setImportView('processing');
 
         try {
             const parsedResults = [];
@@ -1074,10 +1251,12 @@
 
             if (!state.importCandidates.length) {
                 const diagnostics = buildBatchImportDiagnostics(parsedResults);
+                setImportView('results');
                 renderImportDiagnostics(diagnostics);
                 status.textContent = diagnostics.message || '未识别到可填字段';
                 showNotice(diagnostics.message || '未识别到基金代码、份额或成本，请手动填写', 'error', 5000);
             } else {
+                setImportView('results');
                 const engines = [...new Set(parsedResults.map(parsed => parsed.ocrEngine).filter(Boolean))];
                 const engineText = engines.length ? `（${engines.join('、')}）` : '';
                 showNotice(`${files.length > 1 ? '批量截图' : '截图'}读取完成${engineText}，已持仓基金已自动填入原分组`, 'success', 5000);
@@ -1086,6 +1265,8 @@
             console.error('importFromScreenshot failed', error);
             const message = error && error.message ? error.message : '未知错误';
             status.textContent = `识别失败：${message}`;
+            setImportFooterState(true, false);
+            setImportView('results');
             showNotice(`截图识别失败：${message}`, 'error', 5000);
         }
     }
@@ -1098,11 +1279,165 @@
             if (!candidate) return;
 
             candidate.selected = Boolean(row.querySelector('.import-select') && row.querySelector('.import-select').checked);
-            candidate.code = (row.querySelector('.import-code')?.value || '').trim();
-            candidate.shares = (row.querySelector('.import-shares')?.value || '').trim();
-            candidate.cost = (row.querySelector('.import-cost')?.value || '').trim();
-            candidate.group = (row.querySelector('.import-group')?.value || '').trim() || getDefaultImportGroup();
         });
+
+        const editPanel = document.querySelector('.import-edit-panel');
+        if (editPanel) {
+            const index = Number(editPanel.dataset.importIndex);
+            const candidate = state.importCandidates[index];
+            if (!candidate) return;
+
+            candidate.code = (editPanel.querySelector('.import-code')?.value || '').trim();
+            candidate.shares = (editPanel.querySelector('.import-shares')?.value || '').trim();
+            candidate.cost = (editPanel.querySelector('.import-cost')?.value || '').trim();
+            candidate.group = (editPanel.querySelector('.import-group')?.value || '').trim() || getDefaultImportGroup();
+        }
+    }
+
+    function formatImportPreviewNumber(value, digits = 4) {
+        const number = Number(value);
+        if (!Number.isFinite(number)) return '--';
+        return number.toFixed(digits).replace(/\.?0+$/, '');
+    }
+
+    function updateImportEditPreview() {
+        const editPanel = document.querySelector('.import-edit-panel');
+        if (!editPanel) return;
+
+        const sharesInput = editPanel.querySelector('.import-shares');
+        const costInput = editPanel.querySelector('.import-cost');
+        const sharesText = (sharesInput?.value || '').trim();
+        const costText = (costInput?.value || '').trim();
+        const shares = Number(sharesText);
+        const cost = Number(costText);
+        const valid = sharesText !== '' && costText !== '' && Number.isFinite(shares) && Number.isFinite(cost);
+        const total = valid ? shares * cost : NaN;
+
+        const sharesPreview = editPanel.querySelector('.import-edit-shares-preview');
+        const costPreview = editPanel.querySelector('.import-edit-cost-preview');
+        const totalPreview = editPanel.querySelector('.import-edit-total-preview');
+        if (sharesPreview) sharesPreview.textContent = valid ? formatImportPreviewNumber(shares, 2) : '--';
+        if (costPreview) costPreview.textContent = valid ? formatImportPreviewNumber(cost, 4) : '--';
+        if (totalPreview) totalPreview.textContent = valid ? `¥${utils.formatAmount(total, { compact: false })}` : '¥--';
+    }
+
+    function handleImportEditInput() {
+        syncImportRowsToState();
+        updateImportEditPreview();
+    }
+
+    function updateImportSelectAllState() {
+        const selectAll = document.getElementById('importSelectAll');
+        if (!selectAll) {
+            return;
+        }
+
+        const checkboxes = Array.from(document.querySelectorAll('.import-select'));
+        const checkedCount = checkboxes.filter(checkbox => checkbox.checked).length;
+        selectAll.checked = checkboxes.length > 0 && checkedCount === checkboxes.length;
+        selectAll.indeterminate = checkedCount > 0 && checkedCount < checkboxes.length;
+        updateImportBulkGroupState(checkedCount);
+    }
+
+    function updateImportBulkGroupState(checkedCount = null) {
+        const selectedCount = checkedCount === null
+            ? state.importCandidates.filter(candidate => candidate.selected).length
+            : checkedCount;
+        const countEl = document.getElementById('importSelectedCount');
+        const groupSelect = document.getElementById('importBulkGroup');
+        if (countEl) countEl.textContent = `已选 ${selectedCount} 项`;
+        if (groupSelect) {
+            groupSelect.disabled = selectedCount === 0;
+            if (selectedCount === 0) groupSelect.value = '';
+        }
+    }
+
+    function handleImportSelectionChange() {
+        syncImportRowsToState();
+        updateImportSelectAllState();
+    }
+
+    function toggleImportSelectAll(checked) {
+        const checkboxes = Array.from(document.querySelectorAll('.import-select'));
+        checkboxes.forEach(checkbox => {
+            checkbox.checked = checked;
+        });
+
+        state.importCandidates.forEach(candidate => {
+            candidate.selected = checked;
+        });
+        updateImportSelectAllState();
+    }
+
+    function applyImportBulkGroup(group) {
+        syncImportRowsToState();
+        const targetGroup = String(group || '').trim();
+        if (!targetGroup) return;
+
+        let changed = 0;
+        state.importCandidates.forEach(candidate => {
+            if (!candidate.selected) return;
+            candidate.group = targetGroup;
+            changed += 1;
+        });
+
+        if (changed === 0) {
+            showNotice('请先选择要分组的基金', 'error', 3500);
+            updateImportBulkGroupState(0);
+            return;
+        }
+
+        renderImportResults(state.importCandidates);
+        showNotice(`已将 ${changed} 只基金分组到「${targetGroup}」`, 'success', 3000);
+    }
+
+    function editImportCandidate(index) {
+        syncImportRowsToState();
+        if (!state.importCandidates[index]) return;
+        state.importEditingIndex = index;
+        renderImportResults(state.importCandidates);
+    }
+
+    function backImportList() {
+        syncImportRowsToState();
+        state.importEditingIndex = null;
+        renderImportResults(state.importCandidates);
+    }
+
+    function saveImportEdit() {
+        syncImportRowsToState();
+        state.importEditingIndex = null;
+        renderImportResults(state.importCandidates);
+    }
+
+    function removeImportCandidate(index) {
+        if (!state.importCandidates[index]) return;
+        state.importCandidates.splice(index, 1);
+        state.importEditingIndex = null;
+
+        const status = document.getElementById('importStatus');
+        if (status) {
+            status.textContent = state.importCandidates.length
+                ? `剩余 ${state.importCandidates.length} 只待归类基金`
+                : '本次截图中的基金已处理完';
+        }
+
+        renderImportResults(state.importCandidates);
+    }
+
+    function requestRemoveImportCandidate(index) {
+        const editPanel = document.querySelector(`.import-edit-panel[data-import-index="${index}"]`);
+        const confirmPanel = editPanel?.querySelector(`[data-remove-confirm="${index}"]`);
+        if (!confirmPanel) return;
+        confirmPanel.classList.remove('d-none');
+        confirmPanel.classList.add('import-remove-confirm-visible');
+    }
+
+    function cancelRemoveImportCandidate() {
+        const confirmPanel = document.querySelector('.import-remove-confirm');
+        if (!confirmPanel) return;
+        confirmPanel.classList.add('d-none');
+        confirmPanel.classList.remove('import-remove-confirm-visible');
     }
 
     async function applyImportSuggestion(index, code) {
@@ -1145,6 +1480,21 @@
 
         const candidate = state.importCandidates[index];
         if (!candidate) return;
+
+        const editPanel = document.querySelector(`.import-edit-panel[data-import-index="${index}"]`);
+        if (editPanel) {
+            const shares = Number(candidate.shares);
+            const cost = Number(candidate.cost);
+            if (candidate.shares === '' || Number.isNaN(shares) || shares <= 0 ||
+                candidate.cost === '' || Number.isNaN(cost) || cost < 0) {
+                showNotice('请输入有效的份额和成本后再重算', 'error', 4000);
+                return;
+            }
+
+            updateImportEditPreview();
+            showNotice('已更新持仓成本估算', 'success', 3000);
+            return;
+        }
 
         const code = String(candidate.code || '').trim();
         if (!/^\d{6}$/.test(code)) {
@@ -1246,6 +1596,7 @@
         }
 
         state.importCandidates = state.importCandidates.filter((_, index) => !processedIndexes.has(index));
+        state.importEditingIndex = null;
         if (updated > 0) state.importAutoUpdatedCount = (state.importAutoUpdatedCount || 0) + updated;
         app.persistFunds();
         renderUI(true);
@@ -1352,6 +1703,16 @@
         deleteFund,
         sortGroupList,
         importFromScreenshot,
+        editImportCandidate,
+        backImportList,
+        saveImportEdit,
+        handleImportEditInput,
+        requestRemoveImportCandidate,
+        cancelRemoveImportCandidate,
+        removeImportCandidate,
+        handleImportSelectionChange,
+        toggleImportSelectAll,
+        applyImportBulkGroup,
         recalculateImportCandidate,
         addImportSelected,
         applyImportSuggestion

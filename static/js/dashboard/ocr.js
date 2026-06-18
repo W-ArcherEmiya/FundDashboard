@@ -18,6 +18,15 @@
         '浦银安盛', '上银', '西部利得', '前海开源', '财通', '华泰柏瑞', '中加',
         '民生加银', '中信保诚', '天治', '东吴', '光大保德信', '中邮'
     ];
+    const ASSET_FIELD_ALIASES = {
+        amount: ['持有金额', '持仓金额', '资产金额', '持有市值', '金额(元)', '金额'],
+        shares: ['持有份额', '持仓份额', '持有份额(份)', '持有份额（份）', '份额'],
+        cost: ['持仓成本价', '持有成本价', '持仓成本', '持有成本', '成本价', '成本'],
+        holdProfit: ['持有收益(元)', '持有收益（元）', '持有收益', '累计收益', '累计盈亏', '持仓收益'],
+        dailyProfit: ['今日收益(元)', '今日收益（元）', '昨日收益(元)', '昨日收益（元）', '今日收益', '昨日收益', '日收益'],
+        nav: ['基金净值', '单位净值', '最新净值', '净值'],
+        rate: ['持有收益率', '累计收益率', '收益率', '日涨幅', '涨跌幅']
+    };
     let fundCatalogPromise = null;
 
     function normalizeNumber(value) {
@@ -49,6 +58,54 @@
             if (number) return number;
         }
         return '';
+    }
+
+    function findAllLabelIndexes(text, label) {
+        const indexes = [];
+        let start = 0;
+        while (start < text.length) {
+            const index = text.indexOf(label, start);
+            if (index === -1) break;
+            indexes.push(index);
+            start = index + label.length;
+        }
+        return indexes;
+    }
+
+    function extractFieldNumber(text, labels, options = {}) {
+        const { signed = false, percent = false, skipRateLabel = false } = options;
+        const source = String(text || '');
+        const sortedLabels = [...labels].sort((a, b) => b.length - a.length);
+
+        for (const label of sortedLabels) {
+            const indexes = findAllLabelIndexes(source, label);
+            for (const index of indexes) {
+                const afterLabel = source.slice(index + label.length, index + label.length + 1);
+                if (skipRateLabel && afterLabel === '率') continue;
+
+                const slice = source.slice(index + label.length, index + label.length + 90);
+                const pattern = signed
+                    ? /[+-]?\d[\d,，]*(?:\.\d+)?%?/
+                    : /\d[\d,，]*(?:\.\d+)?%?/;
+                const match = slice.match(pattern);
+                if (!match) continue;
+
+                const raw = match[0];
+                const hasPercent = raw.includes('%') || /^%/.test(slice.slice(match.index + raw.length, match.index + raw.length + 3));
+                if (percent && !hasPercent) continue;
+                if (!percent && hasPercent) continue;
+
+                const number = normalizeNumber(raw);
+                if (number) {
+                    return {
+                        value: number,
+                        source: `${label} ${raw.replace(/%$/, '')}${hasPercent ? '%' : ''}`.trim()
+                    };
+                }
+            }
+        }
+
+        return { value: '', source: '' };
     }
 
     function normalizeOcrText(rawText) {
@@ -1050,16 +1107,168 @@
         return null;
     }
 
+    function extractNameNearCode(text, code) {
+        if (!code) return '';
+
+        const source = String(text || '');
+        const index = source.indexOf(code);
+        if (index === -1) return '';
+
+        const beforeCode = source.slice(Math.max(0, index - 80), index);
+        const name = repairTruncatedFundName(cleanHoldingNameFragment(beforeCode, true)).replace(/详情$/g, '');
+        return isLikelyHoldingName(name) ? name : '';
+    }
+
+    function findFirstLabelIndex(text, labels) {
+        return labels
+            .map(label => ({ label, index: text.indexOf(label) }))
+            .filter(item => item.index !== -1)
+            .sort((a, b) => a.index - b.index || b.label.length - a.label.length)[0] || null;
+    }
+
+    function extractGroupedPerformanceFields(text) {
+        const source = String(text || '');
+        const daily = findFirstLabelIndex(source, ASSET_FIELD_ALIASES.dailyProfit);
+        const hold = findFirstLabelIndex(source, ASSET_FIELD_ALIASES.holdProfit);
+        const rate = findFirstLabelIndex(source, ASSET_FIELD_ALIASES.rate);
+        if (!daily || !hold || !rate) return {};
+        if (!(daily.index < hold.index && hold.index < rate.index)) return {};
+        if (rate.index - daily.index > 80) return {};
+
+        const valueStart = rate.index + rate.label.length;
+        const nextSection = ['持有金额', '持仓成本价', '持有份额', '基金净值', '日涨幅', '收益明细']
+            .map(label => source.indexOf(label, valueStart))
+            .filter(index => index !== -1)
+            .sort((a, b) => a - b)[0];
+        const slice = source.slice(valueStart, nextSection || valueStart + 120);
+        const values = [...slice.matchAll(/[+-]?\d[\d,，]*(?:\.\d+)?%?/g)]
+            .map(match => {
+                const raw = match[0];
+                const hasPercent = raw.includes('%');
+                return {
+                    raw,
+                    value: normalizeNumber(raw),
+                    hasPercent
+                };
+            })
+            .filter(item => item.value);
+        const signedValues = values.filter(item => /^[+-]/.test(item.raw) && !item.hasPercent);
+        const percentValue = values.find(item => item.hasPercent);
+
+        return {
+            dailyProfit: signedValues[0] ? { value: signedValues[0].value, source: `${daily.label} ${signedValues[0].raw}` } : null,
+            holdProfit: signedValues[1] ? { value: signedValues[1].value, source: `${hold.label} ${signedValues[1].raw}` } : null,
+            rate: percentValue ? { value: percentValue.value, source: `${rate.label} ${percentValue.raw}` } : null
+        };
+    }
+
+    function buildFieldSources(fields) {
+        const sources = {};
+        Object.keys(fields).forEach(key => {
+            const source = fields[key] && fields[key].source;
+            if (source) sources[key] = source;
+        });
+        return sources;
+    }
+
+    function extractAssetFields(text) {
+        const source = normalizeOcrText(text);
+        const code = extractCode(source);
+        const name = extractNameNearCode(source, code);
+        const amount = extractFieldNumber(source, ASSET_FIELD_ALIASES.amount);
+        const shares = extractFieldNumber(source, ASSET_FIELD_ALIASES.shares);
+        const cost = extractFieldNumber(source, ASSET_FIELD_ALIASES.cost);
+        const holdProfit = extractFieldNumber(source, ASSET_FIELD_ALIASES.holdProfit, { signed: true, skipRateLabel: true });
+        const dailyProfit = extractFieldNumber(source, ASSET_FIELD_ALIASES.dailyProfit, { signed: true });
+        const nav = extractFieldNumber(source, ASSET_FIELD_ALIASES.nav);
+        const rate = extractFieldNumber(source, ASSET_FIELD_ALIASES.rate, { signed: true, percent: true });
+        const groupedPerformance = extractGroupedPerformanceFields(source);
+        const resolvedDailyProfit = groupedPerformance.dailyProfit || dailyProfit;
+        const resolvedHoldProfit = groupedPerformance.holdProfit || holdProfit;
+        const resolvedRate = groupedPerformance.rate || rate;
+
+        return {
+            code,
+            name,
+            amount: amount.value,
+            shares: shares.value,
+            cost: cost.value,
+            holdProfit: resolvedHoldProfit.value,
+            dailyProfit: resolvedDailyProfit.value,
+            nav: nav.value,
+            rate: resolvedRate.value,
+            fieldSources: buildFieldSources({
+                amount,
+                shares,
+                cost,
+                holdProfit: resolvedHoldProfit,
+                dailyProfit: resolvedDailyProfit,
+                nav,
+                rate: resolvedRate
+            })
+        };
+    }
+
+    function inferSharesFromKnownNav(amount, nav) {
+        const amountValue = Number(amount);
+        const navValue = Number(nav);
+        if (!Number.isFinite(amountValue) || !Number.isFinite(navValue) || amountValue <= 0 || navValue <= 0) return '';
+        return (amountValue / navValue).toFixed(2);
+    }
+
+    function inferCostFromKnownFields(amount, holdProfit, shares) {
+        const amountValue = Number(amount);
+        const profitValue = Number(holdProfit);
+        const sharesValue = Number(shares);
+        if (!Number.isFinite(amountValue) || !Number.isFinite(profitValue) || !Number.isFinite(sharesValue) || sharesValue <= 0) return '';
+
+        const totalCost = amountValue - profitValue;
+        if (totalCost < 0) return '';
+        return (totalCost / sharesValue).toFixed(4);
+    }
+
+    function buildAssetFieldCandidate(fields) {
+        if (!fields || (!fields.code && !fields.name)) return null;
+
+        const candidate = {
+            code: fields.code || '',
+            name: fields.name || (fields.code ? `基金 ${fields.code}` : '无法匹配的基金'),
+            amount: fields.amount || '',
+            shares: fields.shares || '',
+            cost: fields.cost || '',
+            holdProfit: fields.holdProfit || '',
+            dailyProfit: fields.dailyProfit || '',
+            nav: fields.nav || '',
+            rate: fields.rate || '',
+            fieldSources: fields.fieldSources || {},
+            source: 'fields'
+        };
+
+        if (!candidate.shares && candidate.amount && candidate.nav) {
+            candidate.shares = inferSharesFromKnownNav(candidate.amount, candidate.nav);
+            if (candidate.shares) candidate.fieldSources.shares = '金额 / 基金净值推算';
+        }
+
+        if (!candidate.cost && candidate.amount && candidate.holdProfit && candidate.shares) {
+            candidate.cost = inferCostFromKnownFields(candidate.amount, candidate.holdProfit, candidate.shares);
+            if (candidate.cost) candidate.fieldSources.cost = '金额、收益、份额推算';
+        }
+
+        const hasImportValue = candidate.amount || candidate.shares || candidate.cost || candidate.holdProfit || candidate.nav;
+        return hasImportValue ? candidate : null;
+    }
+
     function parseAlipayFundText(rawText, ocrBlocks) {
         const text = normalizeOcrText(rawText);
         const blocks = Array.isArray(ocrBlocks) ? ocrBlocks : [];
+        const fieldCandidate = buildAssetFieldCandidate(extractAssetFields(text));
 
         if (looksLikeHoldingsList(text) && !hasDetailFields(text)) {
             return {
                 code: '',
                 shares: '',
                 cost: '',
-                candidates: [],
+                candidates: fieldCandidate ? [fieldCandidate] : [],
                 pageType: 'holdingsList',
                 rawText: text,
                 ocrBlocks: blocks,
@@ -1070,10 +1279,17 @@
         const filteredText = stripKnownNoise(text);
 
         return {
-            code: extractCode(filteredText),
-            shares: extractNumberAfter(filteredText, ['持有份额', '持仓份额', '持有份额(份)', '持有份额（份）', '份额']),
-            cost: extractNumberAfter(filteredText, ['持仓成本价', '持有成本价', '成本价', '持仓成本', '持有成本', '成本']),
-            candidates: [],
+            code: fieldCandidate ? fieldCandidate.code : extractCode(filteredText),
+            shares: fieldCandidate ? fieldCandidate.shares : extractNumberAfter(filteredText, ['持有份额', '持仓份额', '持有份额(份)', '持有份额（份）', '份额']),
+            cost: fieldCandidate ? fieldCandidate.cost : extractNumberAfter(filteredText, ['持仓成本价', '持有成本价', '成本价', '持仓成本', '持有成本', '成本']),
+            amount: fieldCandidate ? fieldCandidate.amount : '',
+            holdProfit: fieldCandidate ? fieldCandidate.holdProfit : '',
+            dailyProfit: fieldCandidate ? fieldCandidate.dailyProfit : '',
+            nav: fieldCandidate ? fieldCandidate.nav : '',
+            rate: fieldCandidate ? fieldCandidate.rate : '',
+            matchedName: fieldCandidate ? fieldCandidate.name : '',
+            fieldSources: fieldCandidate ? fieldCandidate.fieldSources : {},
+            candidates: fieldCandidate ? [fieldCandidate] : [],
             pageType: hasDetailFields(filteredText) ? 'fundDetail' : 'unknown',
             rawText: filteredText,
             ocrBlocks: blocks,
@@ -1082,17 +1298,57 @@
     }
 
     async function enrichFundCandidates(parsed) {
-        if (parsed.code) return parsed;
-
         let catalog = [];
         try {
             catalog = await loadFundCatalog();
         } catch (error) {
+            if (parsed.candidates && parsed.candidates.length) return parsed;
             return {
                 ...parsed,
                 candidates: [],
                 catalogError: error.message || '基金代码表加载失败',
                 message: '已读取截图文字，但基金代码表加载失败，无法按名称匹配代码。'
+            };
+        }
+
+        if (parsed.candidates && parsed.candidates.length) {
+            const candidates = parsed.candidates.map(candidate => {
+                const byCode = candidate.code ? catalog.find(fund => fund.code === candidate.code) : null;
+                if (byCode) {
+                    return {
+                        ...candidate,
+                        name: candidate.name && !/^基金 \d{6}$/.test(candidate.name) ? candidate.name : byCode.name,
+                        type: candidate.type || byCode.type
+                    };
+                }
+
+                if (!candidate.code && candidate.name) {
+                    const match = findBestCatalogMatchForRow(candidate, catalog);
+                    if (match && !match.ambiguous) {
+                        return {
+                            ...candidate,
+                            code: match.code,
+                            name: match.name,
+                            type: match.type,
+                            unmatched: false
+                        };
+                    }
+                    if (match && match.ambiguous) {
+                        return {
+                            ...candidate,
+                            suggestions: match.suggestions,
+                            unmatched: true
+                        };
+                    }
+                }
+
+                return candidate;
+            });
+
+            return {
+                ...parsed,
+                candidates,
+                catalogSize: catalog.length
             };
         }
 
@@ -1175,6 +1431,7 @@
 
     app.ocr = {
         parseAlipayFundText,
+        extractAssetFields,
         findFundCandidates,
         fetchLatestNav,
         recognizeAlipayScreenshot,

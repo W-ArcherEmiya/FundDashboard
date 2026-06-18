@@ -69,6 +69,24 @@
             case 'add-import-selected':
                 app.ui.addImportSelected();
                 break;
+            case 'edit-import-row':
+                app.ui.editImportCandidate(Number(actionEl.dataset.importIndex));
+                break;
+            case 'back-import-list':
+                app.ui.backImportList();
+                break;
+            case 'save-import-edit':
+                app.ui.saveImportEdit();
+                break;
+            case 'request-remove-import-row':
+                app.ui.requestRemoveImportCandidate(Number(actionEl.dataset.importIndex));
+                break;
+            case 'cancel-remove-import-row':
+                app.ui.cancelRemoveImportCandidate();
+                break;
+            case 'confirm-remove-import-row':
+                app.ui.removeImportCandidate(Number(actionEl.dataset.importIndex));
+                break;
             case 'recalc-import-row':
                 app.ui.recalculateImportCandidate(Number(actionEl.dataset.importIndex));
                 break;
@@ -84,10 +102,28 @@
         }
     });
 
+    document.addEventListener('input', event => {
+        if (event.target.classList.contains('import-shares') || event.target.classList.contains('import-cost')) {
+            app.ui.handleImportEditInput();
+        }
+    });
+
     document.addEventListener('change', event => {
         if (event.target.id === 'importImageInput') {
             const files = Array.from(event.target.files || []);
             app.ui.importFromScreenshot(files);
+        }
+
+        if (event.target.id === 'importSelectAll') {
+            app.ui.toggleImportSelectAll(event.target.checked);
+        }
+
+        if (event.target.classList.contains('import-select')) {
+            app.ui.handleImportSelectionChange();
+        }
+
+        if (event.target.id === 'importBulkGroup') {
+            app.ui.applyImportBulkGroup(event.target.value);
         }
 
         if (event.target.classList.contains('import-suggestion')) {
