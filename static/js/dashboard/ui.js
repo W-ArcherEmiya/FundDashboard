@@ -791,11 +791,13 @@
 
         const index = state.myFunds.findIndex(fund => fund.code === candidate.code);
         if (index === -1) return false;
+        const group = String(candidate.group || '').trim() || state.myFunds[index].group || '默认分组';
 
         state.myFunds[index] = {
             ...state.myFunds[index],
             shares: candidate.shares,
-            cost: candidate.cost !== '' ? candidate.cost : state.myFunds[index].cost
+            cost: candidate.cost !== '' ? candidate.cost : state.myFunds[index].cost,
+            group
         };
         return true;
     }
@@ -1612,11 +1614,11 @@
             return;
         }
 
-        const defaultGroup = getDefaultImportGroup();
-        const groupSource = selectedEntries.find(entry => entry.candidate.group && entry.candidate.group !== defaultGroup) || selectedEntries[0];
-        const targetGroup = (groupSource.candidate.group || defaultGroup).trim() || '默认分组';
-
-        if (targetGroup.length > 32) {
+        const invalidGroup = selectedEntries.find(({ candidate }) => {
+            const group = String(candidate.group || getDefaultImportGroup()).trim() || '默认分组';
+            return group.length > 32;
+        });
+        if (invalidGroup) {
             showNotice('分组名称不能超过 32 个字符', 'error', 5000);
             return;
         }
@@ -1625,6 +1627,7 @@
             const code = String(candidate.code || '').trim();
             const shares = String(candidate.shares || '').trim();
             const cost = String(candidate.cost || '').trim();
+            const group = String(candidate.group || getDefaultImportGroup()).trim() || '默认分组';
 
             if (!/^\d{6}$/.test(code) ||
                 shares === '' || Number.isNaN(Number(shares)) || Number(shares) <= 0 ||
@@ -1634,7 +1637,7 @@
             }
 
             if (state.myFunds.some(fund => fund.code === code)) {
-                if (updateExistingFundFromCandidate({ ...candidate, code, shares, cost })) {
+                if (updateExistingFundFromCandidate({ ...candidate, code, shares, cost, group })) {
                     storeCandidateSnapshotOverride(code, candidate);
                     updated += 1;
                     processedIndexes.add(index);
@@ -1648,7 +1651,7 @@
                 code,
                 shares,
                 cost,
-                group: targetGroup
+                group
             });
             storeCandidateSnapshotOverride(code, candidate);
             added += 1;
@@ -1670,7 +1673,14 @@
 
         const status = document.getElementById('importStatus');
         if (status) status.textContent = state.importCandidates.length ? `剩余 ${state.importCandidates.length} 只待归类基金` : '本次截图中的基金已处理完';
-        showNotice(`已归类 ${added} 只基金到「${targetGroup}」${updated ? `，更新 ${updated} 只已有基金` : ''}${skipped ? `，跳过 ${skipped} 只` : ''}`, 'success', 5000);
+        const groups = [...new Set(selectedEntries
+            .filter(({ index }) => processedIndexes.has(index))
+            .map(({ candidate }) => String(candidate.group || getDefaultImportGroup()).trim() || '默认分组'))];
+        const groupText = groups.length === 1 ? `到「${groups[0]}」` : `到 ${groups.length} 个分组`;
+        const actionText = added > 0
+            ? `已归类 ${added} 只基金${groupText}${updated ? `，更新 ${updated} 只已有基金` : ''}`
+            : `已更新 ${updated} 只已有基金${groupText}`;
+        showNotice(`${actionText}${skipped ? `，跳过 ${skipped} 只` : ''}`, 'success', 5000);
 
         if (state.importCandidates.length === 0 && state.importModal) {
             state.importModal.hide();
