@@ -4,6 +4,7 @@ __pycache__/
 sync_data.json
 .tmp/
 flask-dev.log
+*.refresh.lock
 tests/.tmp_sync_data.json
 tests/.tmp_exports/
 exports/*.csv

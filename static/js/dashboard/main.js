@@ -11,7 +11,9 @@
         const savedSyncCode = localStorage.getItem('lastSyncCode');
         if (savedSyncCode) document.getElementById('syncCodeInput').value = savedSyncCode;
 
-        const restoredFromCloud = savedSyncCode ? await app.data.autoRestoreCloudData(savedSyncCode) : false;
+        const restoredFromCloud = savedSyncCode && !state.cloudSyncDirty
+            ? await app.data.autoRestoreCloudData(savedSyncCode)
+            : false;
         if (!restoredFromCloud) {
             if (state.myFunds.length > 0) app.ui.renderUI(true);
             app.data.refreshNetworkData();

@@ -1,7 +1,10 @@
 import os
 import shutil
 import tempfile
+import threading
+import time
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import app as fund_app
@@ -177,6 +180,68 @@ class FundDashboardAppTests(unittest.TestCase):
         self.assertEqual(payload['snapshot'][0]['name'], '测试基金')
         self.assertEqual(payload['snapshot'][0]['totalAsset'], 13.0)
         self.assertIn('auto_refreshed_at', payload)
+
+    def test_client_sync_refresh_reuses_one_canonical_snapshot(self):
+        fund_app.save_data({
+            '159357': {
+                'data': [{'code': '000001', 'shares': '10.0', 'cost': '1.2', 'group': '稳健'}],
+                'snapshot': [],
+                'updated_at': '2026-01-01T00:00:00Z',
+            }
+        })
+
+        refresh_calls = []
+        original_refresh = fund_refresh.refresh_funds_snapshot
+        try:
+            def fake_refresh(funds):
+                refresh_calls.append(list(funds))
+                time.sleep(0.05)
+                return [{
+                    'code': funds[0]['code'],
+                    'group': funds[0]['group'],
+                    'name': '统一快照基金',
+                    'estNav': 1.31,
+                    'dailyProfit': 1.1,
+                    'holdProfit': 1.1,
+                    'totalAsset': 13.1,
+                    'gztime': '云端刷新',
+                    'valid': True,
+                    'isActual': False,
+                    'isBackup': False,
+                    'isUnavailable': False,
+                }]
+
+            fund_refresh.refresh_funds_snapshot = fake_refresh
+            request_barrier = threading.Barrier(2)
+
+            def refresh_from_device():
+                request_barrier.wait()
+                with fund_app.app.test_client() as client:
+                    response = client.post('/api/sync/refresh/159357')
+                    return response.status_code, response.get_json()
+
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                responses = list(executor.map(lambda _: refresh_from_device(), range(2)))
+        finally:
+            fund_refresh.refresh_funds_snapshot = original_refresh
+
+        self.assertEqual([status for status, _ in responses], [200, 200])
+        payloads = [payload for _, payload in responses]
+        refreshed_payload = next(payload for payload in payloads if payload['refreshed'])
+        reused_payload = next(payload for payload in payloads if payload['reused'])
+        self.assertFalse(refreshed_payload['reused'])
+        self.assertFalse(reused_payload['refreshed'])
+        self.assertEqual(len(refresh_calls), 1)
+        self.assertEqual(refreshed_payload['snapshot'], reused_payload['snapshot'])
+        self.assertEqual(refreshed_payload['snapshot_updated_at'], reused_payload['snapshot_updated_at'])
+        self.assertEqual(refreshed_payload['updated_at'], '2026-01-01T00:00:00Z')
+        self.assertTrue(refreshed_payload['snapshot'][0]['isSyncSnapshot'])
+
+    def test_client_sync_refresh_returns_404_for_unknown_code(self):
+        response = self.client.post('/api/sync/refresh/404404')
+
+        self.assertEqual(response.status_code, 404)
+        self.assertFalse(response.get_json()['success'])
 
     def test_admin_refresh_cloud_snapshots_requires_configured_token(self):
         os.environ.pop(fund_app.REFRESH_TOKEN_ENV, None)

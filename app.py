@@ -1,11 +1,14 @@
 from flask import Flask, render_template, request, jsonify, send_from_directory
 from datetime import datetime, timezone
+from contextlib import contextmanager
 import csv
+import hashlib
 import json
 import os
 import re
 import tempfile
 import threading
+import time
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 9 * 1024 * 1024
@@ -23,7 +26,12 @@ MAX_EXPORT_ROWS = 1000
 MAX_EXPORT_FILES = 30
 OCR_MAX_IMAGE_BYTES = 8 * 1024 * 1024
 REFRESH_TOKEN_ENV = 'FUND_REFRESH_TOKEN'
+CLIENT_REFRESH_REUSE_SECONDS = 30
+REFRESH_LOCK_WAIT_SECONDS = 90
+REFRESH_LOCK_STALE_SECONDS = 15 * 60
 DATA_LOCK = threading.Lock()
+SYNC_REFRESH_LOCKS_GUARD = threading.Lock()
+SYNC_REFRESH_LOCKS = {}
 OCR_ENGINE_LOCK = threading.Lock()
 OCR_ENGINE_STATE = {"name": None, "engine": None, "error": None}
 EXPORT_FIELDS = [
@@ -55,6 +63,69 @@ def build_rapidocr_params():
 
 def utc_now_iso():
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00', 'Z')
+
+
+def parse_utc_iso(value):
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.strip().replace('Z', '+00:00'))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def is_recent_timestamp(value, max_age_seconds):
+    parsed = parse_utc_iso(value)
+    if parsed is None or max_age_seconds <= 0:
+        return False
+    age_seconds = (datetime.now(timezone.utc) - parsed).total_seconds()
+    return 0 <= age_seconds < max_age_seconds
+
+
+def get_sync_refresh_thread_lock(sync_code):
+    with SYNC_REFRESH_LOCKS_GUARD:
+        return SYNC_REFRESH_LOCKS.setdefault(sync_code, threading.Lock())
+
+
+@contextmanager
+def sync_refresh_lock(sync_code):
+    """Serialize refreshes across threads and web worker processes."""
+    thread_lock = get_sync_refresh_thread_lock(sync_code)
+    lock_name = hashlib.sha256(sync_code.encode('utf-8')).hexdigest()[:24]
+    lock_path = f"{DATA_FILE}.{lock_name}.refresh.lock"
+    deadline = time.monotonic() + REFRESH_LOCK_WAIT_SECONDS
+
+    with thread_lock:
+        lock_fd = None
+        while lock_fd is None:
+            try:
+                lock_fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+                os.write(lock_fd, str(os.getpid()).encode('ascii'))
+            except FileExistsError:
+                try:
+                    lock_age = time.time() - os.path.getmtime(lock_path)
+                    if lock_age > REFRESH_LOCK_STALE_SECONDS:
+                        os.remove(lock_path)
+                        continue
+                except FileNotFoundError:
+                    continue
+
+                if time.monotonic() >= deadline:
+                    raise TimeoutError("等待同一同步码的刷新任务超时")
+                time.sleep(0.1)
+
+        try:
+            yield
+        finally:
+            if lock_fd is not None:
+                os.close(lock_fd)
+            try:
+                os.remove(lock_path)
+            except FileNotFoundError:
+                pass
 
 
 def safe_text_cell(value):
@@ -268,53 +339,100 @@ def save_data(data):
 def unpack_sync_entry(entry):
     """兼容旧版 list 存储和新版带元数据的对象存储。"""
     if isinstance(entry, list):
-        return entry, None, []
+        return entry, None, [], None
     if isinstance(entry, dict) and isinstance(entry.get('data'), list):
         updated_at = entry.get('updated_at')
         snapshot = entry.get('snapshot') if isinstance(entry.get('snapshot'), list) else []
-        return entry['data'], updated_at if isinstance(updated_at, str) else None, snapshot
-    return None, None, []
+        snapshot_updated_at = entry.get('snapshot_updated_at') or entry.get('auto_refreshed_at')
+        return (
+            entry['data'],
+            updated_at if isinstance(updated_at, str) else None,
+            snapshot,
+            snapshot_updated_at if isinstance(snapshot_updated_at, str) else None,
+        )
+    return None, None, [], None
+
+
+def refresh_sync_snapshot(sync_code, min_interval_seconds=0, dry_run=False):
+    """Refresh one canonical cloud snapshot, reusing a recent completed refresh."""
+    from fund_refresh import refresh_funds_snapshot
+
+    with sync_refresh_lock(sync_code):
+        with DATA_LOCK:
+            db = load_data()
+            entry = db.get(sync_code)
+            funds_data, updated_at, snapshot, snapshot_updated_at = unpack_sync_entry(entry)
+            if not funds_data:
+                return {"found": False, "refreshed": False, "reused": False}
+
+            snapshot_is_complete = (
+                isinstance(snapshot, list)
+                and len(snapshot) == len(funds_data)
+                and all(item is not None for item in snapshot)
+            )
+            if (
+                snapshot_is_complete
+                and is_recent_timestamp(snapshot_updated_at, min_interval_seconds)
+            ):
+                return {
+                    "found": True,
+                    "refreshed": False,
+                    "reused": True,
+                    "data": funds_data,
+                    "snapshot": snapshot,
+                    "updated_at": updated_at,
+                    "snapshot_updated_at": snapshot_updated_at,
+                }
+
+            refreshed_snapshot = refresh_funds_snapshot(funds_data)
+            normalized_snapshot, snapshot_error = validate_sync_snapshot(refreshed_snapshot, funds_data)
+            if snapshot_error:
+                raise ValueError(snapshot_error)
+
+            refreshed_at = utc_now_iso()
+            if not dry_run:
+                normalized_entry = dict(entry) if isinstance(entry, dict) else {}
+                normalized_entry.update({
+                    "data": funds_data,
+                    "snapshot": normalized_snapshot,
+                    "updated_at": updated_at or refreshed_at,
+                    "snapshot_updated_at": refreshed_at,
+                    "auto_refreshed_at": refreshed_at,
+                })
+                db[sync_code] = normalized_entry
+                save_data(db)
+
+            return {
+                "found": True,
+                "refreshed": True,
+                "reused": False,
+                "data": funds_data,
+                "snapshot": normalized_snapshot,
+                "updated_at": updated_at or refreshed_at,
+                "snapshot_updated_at": refreshed_at,
+            }
 
 
 def refresh_sync_snapshots(sync_code=None, dry_run=False):
     """Refresh cloud display snapshots for one or all sync codes."""
-    from fund_refresh import refresh_funds_snapshot
-
     with DATA_LOCK:
         db = load_data()
-        refreshed = 0
-        skipped = 0
+        codes = [sync_code] if sync_code else list(db.keys())
+        total = len(db)
 
-        for code, entry in list(db.items()):
-            if sync_code and code != sync_code:
-                continue
-
-            funds_data, _, _ = unpack_sync_entry(entry)
-            if not funds_data:
-                skipped += 1
-                continue
-
-            snapshot = refresh_funds_snapshot(funds_data)
+    refreshed = 0
+    skipped = 0
+    for code in codes:
+        result = refresh_sync_snapshot(code, dry_run=dry_run)
+        if not result["found"]:
+            skipped += 1
+        elif result["refreshed"]:
             refreshed += 1
-
-            if dry_run:
-                continue
-
-            now = utc_now_iso()
-            db[code] = {
-                "data": funds_data,
-                "snapshot": snapshot,
-                "updated_at": now,
-                "auto_refreshed_at": now,
-            }
-
-        if not dry_run and refreshed:
-            save_data(db)
 
     return {
         "refreshed": refreshed,
         "skipped": skipped,
-        "total": len(db),
+        "total": total,
     }
 
 
@@ -660,14 +778,19 @@ def sync_save():
     updated_at = utc_now_iso()
 
     try:
-        with DATA_LOCK:
-            db = load_data()
-            db[sync_code] = {
-                "data": funds_data,
-                "snapshot": snapshot_data,
-                "updated_at": updated_at,
-            }
-            save_data(db)
+        with sync_refresh_lock(sync_code):
+            with DATA_LOCK:
+                db = load_data()
+                db[sync_code] = {
+                    "data": funds_data,
+                    "snapshot": snapshot_data,
+                    "updated_at": updated_at,
+                    # Browser snapshots are useful for immediate restore but are not canonical.
+                    "snapshot_updated_at": None,
+                }
+                save_data(db)
+    except TimeoutError:
+        return jsonify({"success": False, "error": "云端正在刷新，请稍后重新上传"}), 503
     except OSError:
         return jsonify({"success": False, "error": "写入同步数据失败"}), 500
 
@@ -688,17 +811,42 @@ def sync_load(sync_code):
 
     db = load_data()
     if sync_code in db:
-        funds_data, updated_at, snapshot_data = unpack_sync_entry(db[sync_code])
+        funds_data, updated_at, snapshot_data, snapshot_updated_at = unpack_sync_entry(db[sync_code])
         if funds_data is not None:
             return jsonify({
                 "success": True,
                 "data": funds_data,
                 "snapshot": snapshot_data,
                 "updated_at": updated_at,
+                "snapshot_updated_at": snapshot_updated_at,
             })
         return jsonify({"success": False, "message": "同步数据格式异常，请重新上传"}), 500
     else:
         return jsonify({"success": False, "message": "未找到该同步码的数据，请先上传"}), 404
+
+
+@app.route('/api/sync/refresh/<sync_code>', methods=['POST'])
+def sync_refresh(sync_code):
+    """Refresh and return the canonical snapshot shared by all devices."""
+    sync_code = normalize_sync_code(sync_code)
+    if not sync_code:
+        return jsonify({"success": False, "error": "同步码无效"}), 400
+
+    try:
+        result = refresh_sync_snapshot(
+            sync_code,
+            min_interval_seconds=CLIENT_REFRESH_REUSE_SECONDS,
+        )
+    except TimeoutError:
+        return jsonify({"success": False, "error": "云端正在刷新，请稍后重试"}), 503
+    except Exception:
+        app.logger.exception("Client cloud snapshot refresh failed")
+        return jsonify({"success": False, "error": "云端净值刷新失败"}), 500
+
+    if not result["found"]:
+        return jsonify({"success": False, "error": "未找到该同步码的数据"}), 404
+
+    return jsonify({"success": True, **result})
 
 
 @app.route('/api/admin/refresh-cloud-snapshots', methods=['GET', 'POST'])
