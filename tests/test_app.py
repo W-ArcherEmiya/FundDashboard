@@ -290,6 +290,65 @@ class FundDashboardAppTests(unittest.TestCase):
         self.assertTrue(payload['snapshot'][0]['isRefreshFallback'])
         self.assertFalse(payload['snapshot'][0]['isUnavailable'])
 
+    def test_browser_snapshot_publish_reuses_first_device_result(self):
+        save_response = self.client.post('/api/sync/save', json={
+            'sync_code': '159357',
+            'data': [{'code': '000001', 'shares': '10.0', 'cost': '1.1', 'group': '稳健'}],
+        })
+        self.assertEqual(save_response.status_code, 200)
+
+        def snapshot(nav):
+            return [{
+                'code': '000001',
+                'group': '稳健',
+                'name': '浏览器行情基金',
+                'estNav': nav,
+                'dailyProfit': 1.0,
+                'holdProfit': 2.0,
+                'totalAsset': nav * 10,
+                'gztime': '浏览器刷新',
+                'valid': True,
+                'isActual': False,
+                'isBackup': False,
+                'isUnavailable': False,
+            }]
+
+        first_response = self.client.post('/api/sync/publish/159357', json={'snapshot': snapshot(1.3)})
+        second_response = self.client.post('/api/sync/publish/159357', json={'snapshot': snapshot(9.9)})
+
+        self.assertEqual(first_response.status_code, 200)
+        self.assertEqual(second_response.status_code, 200)
+        first_payload = first_response.get_json()
+        second_payload = second_response.get_json()
+        self.assertTrue(first_payload['published'])
+        self.assertFalse(first_payload['reused'])
+        self.assertFalse(second_payload['published'])
+        self.assertTrue(second_payload['reused'])
+        self.assertEqual(first_payload['snapshot'], second_payload['snapshot'])
+        self.assertEqual(second_payload['snapshot'][0]['estNav'], 1.3)
+        self.assertEqual(second_payload['snapshot_source'], 'browser')
+
+    def test_browser_snapshot_publish_rejects_unavailable_only_snapshot(self):
+        save_response = self.client.post('/api/sync/save', json={
+            'sync_code': '159357',
+            'data': [{'code': '000001', 'shares': '10.0', 'cost': '1.1', 'group': '稳健'}],
+        })
+        self.assertEqual(save_response.status_code, 200)
+
+        response = self.client.post('/api/sync/publish/159357', json={'snapshot': [{
+            'code': '000001',
+            'group': '稳健',
+            'name': '基金 000001',
+            'gztime': '暂无盘中估算',
+            'valid': True,
+            'isActual': True,
+            'isBackup': True,
+            'isUnavailable': True,
+        }]})
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('没有可用净值', response.get_json()['error'])
+
     def test_admin_refresh_cloud_snapshots_requires_configured_token(self):
         os.environ.pop(fund_app.REFRESH_TOKEN_ENV, None)
 

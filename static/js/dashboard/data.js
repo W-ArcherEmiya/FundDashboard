@@ -230,7 +230,7 @@
                 app.markCloudSyncClean();
                 app.ui.showNotice('数据已上传，正在生成统一云端净值', 'success', 4000);
                 state.syncModal.hide();
-                refreshNetworkData({ allowQueue: true, forceHist: true });
+                refreshNetworkData({ allowQueue: true, forceHist: true, skipLocalRefresh: true });
             } else {
                 app.ui.showNotice('上传失败：' + resData.error, 'error', 4000);
             }
@@ -421,31 +421,64 @@
         });
     }
 
+    function queuePendingRefresh(options = {}) {
+        state.refreshPending = true;
+        state.refreshPendingOptions = {
+            ...(state.refreshPendingOptions || {}),
+            forceHist: Boolean((state.refreshPendingOptions || {}).forceHist || options.forceHist),
+            skipLocalRefresh: Boolean((state.refreshPendingOptions || {}).skipLocalRefresh || options.skipLocalRefresh)
+        };
+    }
+
+    function flushPendingRefresh() {
+        if (!state.refreshPending) return;
+        const pendingOptions = state.refreshPendingOptions || {};
+        state.refreshPending = false;
+        state.refreshPendingOptions = null;
+        refreshNetworkData(pendingOptions);
+    }
+
     async function refreshCloudSnapshot(syncCode, options = {}) {
-        const { allowQueue = true, forceHist = false } = options;
+        const { allowQueue = true, forceHist = false, skipLocalRefresh = false } = options;
         if (state.refreshInFlight) {
-            if (allowQueue) {
-                state.refreshPending = true;
-                state.refreshPendingOptions = {
-                    ...(state.refreshPendingOptions || {}),
-                    forceHist: Boolean((state.refreshPendingOptions || {}).forceHist || forceHist)
-                };
+            if (allowQueue) queuePendingRefresh(options);
+            return;
+        }
+
+        if (!skipLocalRefresh) {
+            await refreshLocalData({ allowQueue: false, forceHist, deferPending: true });
+        }
+        if (state.cloudSyncDirty) {
+            if (forceHist) {
+                app.ui.showNotice('检测到本地持仓已修改，本次结果未发布到云端', 'success', 4000);
             }
+            flushPendingRefresh();
+            return;
+        }
+
+        const submittedSnapshot = buildSyncSnapshot();
+        if (countCompleteSnapshots(submittedSnapshot) === 0) {
+            app.ui.showNotice('浏览器未获取到可用净值，已保留原云端数据', 'error', 5000);
+            flushPendingRefresh();
             return;
         }
 
         state.refreshInFlight = true;
         const bar = document.getElementById('refreshBar');
-        bar.style.width = '20%';
+        bar.style.width = '70%';
 
         try {
-            const response = await fetch('/api/sync/refresh/' + encodeURIComponent(syncCode), {
+            const response = await fetch('/api/sync/publish/' + encodeURIComponent(syncCode), {
                 method: 'POST',
-                headers: { 'Accept': 'application/json' }
+                headers: {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ snapshot: submittedSnapshot })
             });
             const payload = await response.json();
             if (!response.ok || !payload.success) {
-                throw new Error(payload.error || '云端净值刷新失败');
+                throw new Error(payload.error || '云端净值发布失败');
             }
 
             bar.style.width = '80%';
@@ -479,38 +512,26 @@
                 const snapshotTime = payload.snapshot_updated_at
                     ? `，快照时间 ${utils.formatSyncTime(payload.snapshot_updated_at)}`
                     : '';
-                const fallbackCount = Number(payload.fallback_count) || 0;
-                const message = fallbackCount > 0
-                    ? `云端行情暂不可用，已保留 ${fallbackCount} 项上传快照${snapshotTime}`
-                    : `已刷新统一云端净值${snapshotTime}`;
+                const message = payload.reused
+                    ? `已采用另一台设备刚发布的统一快照${snapshotTime}`
+                    : `已通过浏览器更新统一云端净值${snapshotTime}`;
                 app.ui.showNotice(message, 'success', 5000);
             }
         } catch (error) {
             console.error('refreshCloudSnapshot failed', error);
-            app.ui.showNotice(`云端净值刷新失败：${error.message}`, 'error', 5000);
+            app.ui.showNotice(`云端净值发布失败：${error.message}`, 'error', 5000);
             app.ui.renderUI(state.cachedResults.length === 0);
         } finally {
             state.refreshInFlight = false;
             setTimeout(() => { bar.style.width = '0%'; }, 500);
-            if (state.refreshPending) {
-                const pendingOptions = state.refreshPendingOptions || {};
-                state.refreshPending = false;
-                state.refreshPendingOptions = null;
-                refreshNetworkData(pendingOptions);
-            }
+            flushPendingRefresh();
         }
     }
 
     async function refreshLocalData(options = {}) {
-        const { allowQueue = true, forceHist = false } = options;
+        const { allowQueue = true, forceHist = false, deferPending = false } = options;
         if (state.refreshInFlight) {
-            if (allowQueue) {
-                state.refreshPending = true;
-                state.refreshPendingOptions = {
-                    ...(state.refreshPendingOptions || {}),
-                    forceHist: Boolean((state.refreshPendingOptions || {}).forceHist || forceHist)
-                };
-            }
+            if (allowQueue) queuePendingRefresh(options);
             return;
         }
 
@@ -600,12 +621,7 @@
             window.jsonpgz = undefined;
             state.refreshInFlight = false;
             setTimeout(() => { bar.style.width = '0%'; }, 500);
-            if (state.refreshPending) {
-                const pendingOptions = state.refreshPendingOptions || {};
-                state.refreshPending = false;
-                state.refreshPendingOptions = null;
-                refreshNetworkData(pendingOptions);
-            }
+            if (!deferPending) flushPendingRefresh();
         }
     }
 
