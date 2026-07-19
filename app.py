@@ -473,6 +473,67 @@ def refresh_sync_snapshot(sync_code, min_interval_seconds=0, dry_run=False):
             }
 
 
+def publish_sync_snapshot(sync_code, submitted_snapshot):
+    """Publish a browser-fetched snapshot without server-side market access."""
+    with sync_refresh_lock(sync_code):
+        with DATA_LOCK:
+            db = load_data()
+            entry = db.get(sync_code)
+            funds_data, updated_at, snapshot, _ = unpack_sync_entry(entry)
+            if not funds_data:
+                return {"found": False, "published": False, "reused": False}
+
+            normalized_snapshot, snapshot_error = validate_sync_snapshot(submitted_snapshot, funds_data)
+            if snapshot_error:
+                raise ValueError(snapshot_error)
+            complete_count = sum(has_complete_snapshot_metrics(item) for item in normalized_snapshot)
+            if complete_count == 0:
+                raise ValueError("浏览器快照没有可用净值")
+
+            client_refreshed_at = entry.get('client_refreshed_at') if isinstance(entry, dict) else None
+            existing_complete_count = sum(has_complete_snapshot_metrics(item) for item in snapshot)
+            if (
+                existing_complete_count > 0
+                and is_recent_timestamp(client_refreshed_at, CLIENT_REFRESH_REUSE_SECONDS)
+            ):
+                return {
+                    "found": True,
+                    "published": False,
+                    "reused": True,
+                    "data": funds_data,
+                    "snapshot": snapshot,
+                    "updated_at": updated_at,
+                    "snapshot_updated_at": client_refreshed_at,
+                    "snapshot_source": "browser",
+                    "complete_count": existing_complete_count,
+                }
+
+            published_at = utc_now_iso()
+            normalized_entry = dict(entry) if isinstance(entry, dict) else {}
+            normalized_entry.update({
+                "data": funds_data,
+                "snapshot": normalized_snapshot,
+                "updated_at": updated_at or published_at,
+                "snapshot_updated_at": published_at,
+                "client_refreshed_at": published_at,
+                "snapshot_source": "browser",
+            })
+            db[sync_code] = normalized_entry
+            save_data(db)
+
+            return {
+                "found": True,
+                "published": True,
+                "reused": False,
+                "data": funds_data,
+                "snapshot": normalized_snapshot,
+                "updated_at": updated_at or published_at,
+                "snapshot_updated_at": published_at,
+                "snapshot_source": "browser",
+                "complete_count": complete_count,
+            }
+
+
 def refresh_sync_snapshots(sync_code=None, dry_run=False):
     """Refresh cloud display snapshots for one or all sync codes."""
     with DATA_LOCK:
@@ -902,6 +963,33 @@ def sync_refresh(sync_code):
     except Exception:
         app.logger.exception("Client cloud snapshot refresh failed")
         return jsonify({"success": False, "error": "云端净值刷新失败"}), 500
+
+    if not result["found"]:
+        return jsonify({"success": False, "error": "未找到该同步码的数据"}), 404
+
+    return jsonify({"success": True, **result})
+
+
+@app.route('/api/sync/publish/<sync_code>', methods=['POST'])
+def sync_publish(sync_code):
+    """Accept a canonical snapshot fetched by a browser client."""
+    sync_code = normalize_sync_code(sync_code)
+    if not sync_code:
+        return jsonify({"success": False, "error": "同步码无效"}), 400
+
+    req = request.get_json(silent=True)
+    if not isinstance(req, dict):
+        return jsonify({"success": False, "error": "请求体必须是 JSON 对象"}), 400
+
+    try:
+        result = publish_sync_snapshot(sync_code, req.get('snapshot'))
+    except TimeoutError:
+        return jsonify({"success": False, "error": "另一台设备正在发布快照，请稍后重试"}), 503
+    except ValueError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 400
+    except OSError:
+        app.logger.exception("Browser cloud snapshot publish failed")
+        return jsonify({"success": False, "error": "写入云端快照失败"}), 500
 
     if not result["found"]:
         return jsonify({"success": False, "error": "未找到该同步码的数据"}), 404
