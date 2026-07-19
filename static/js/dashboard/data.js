@@ -136,24 +136,10 @@
         snapshot.forEach(item => {
             if (item && item.code) snapshotByCode.set(item.code, item);
         });
-        state.syncSnapshotOverrides = state.syncSnapshotOverrides || {};
-
         const results = (funds || []).map((fund, index) => {
             const direct = snapshot[index];
             const item = direct && direct.code === fund.code ? direct : snapshotByCode.get(fund.code);
             if (!item) return null;
-            const override = {};
-            SYNC_OVERRIDE_FIELDS.forEach(field => {
-                const value = Number(item[field]);
-                if (Number.isFinite(value)) override[field] = value;
-            });
-            if (Object.keys(override).length) {
-                state.syncSnapshotOverrides[fund.code] = {
-                    ...state.syncSnapshotOverrides[fund.code],
-                    ...override,
-                    updatedAt: new Date().toISOString()
-                };
-            }
 
             return {
                 ...item,
@@ -164,21 +150,24 @@
             };
         });
 
-        const hasUsableSnapshot = results.some(item => logic.hasCompleteDisplayMetrics(item));
+        const hasUsableSnapshot = results.some(item => (
+            logic.hasCompleteDisplayMetrics(item) || (item && item.isUnavailable)
+        ));
         if (!hasUsableSnapshot) {
             state.cachedResults = [];
             return false;
         }
         state.cachedResults = results;
+        state.syncSnapshotOverrides = {};
         app.persistSyncSnapshotOverrides();
         return true;
     }
 
-    function needsSnapshotRefresh() {
-        return (state.myFunds || []).some((fund, index) => {
-            const item = (state.cachedResults || [])[index];
-            return !logic.hasCompleteDisplayMetrics(item) && !(item && item.isUnavailable);
-        });
+    function storeSyncMetadata(payload) {
+        if (payload.updated_at) localStorage.setItem('lastSyncUpdatedAt', payload.updated_at);
+        if (payload.snapshot_updated_at) {
+            localStorage.setItem('lastSyncSnapshotUpdatedAt', payload.snapshot_updated_at);
+        }
     }
 
     async function uploadSyncData() {
@@ -205,9 +194,11 @@
             const resData = await response.json();
             if (resData.success) {
                 localStorage.setItem('lastSyncCode', code);
-                if (resData.updated_at) localStorage.setItem('lastSyncUpdatedAt', resData.updated_at);
-                app.ui.showNotice('数据已上传到云端', 'success');
+                storeSyncMetadata(resData);
+                app.markCloudSyncClean();
+                app.ui.showNotice('数据已上传，正在生成统一云端净值', 'success', 4000);
                 state.syncModal.hide();
+                refreshNetworkData({ allowQueue: true });
             } else {
                 app.ui.showNotice('上传失败：' + resData.error, 'error', 4000);
             }
@@ -237,17 +228,16 @@
             const resData = await response.json();
             if (resData.success) {
                 state.myFunds = resData.data;
-                app.persistFunds();
+                app.persistFunds({ synced: true });
                 localStorage.setItem('lastSyncCode', code);
-                if (resData.updated_at) localStorage.setItem('lastSyncUpdatedAt', resData.updated_at);
+                storeSyncMetadata(resData);
                 const syncTime = resData.updated_at ? `，云端更新时间 ${utils.formatSyncTime(resData.updated_at)}` : '';
                 const hasSnapshot = applySyncSnapshot(resData.snapshot, state.myFunds);
                 if (!hasSnapshot) state.cachedResults = [];
-                const shouldRefreshSnapshot = hasSnapshot && needsSnapshotRefresh();
                 app.ui.showNotice(`云端数据已同步到本地${syncTime}${hasSnapshot ? '，已恢复云端快照' : ''}`, 'success', 4000);
                 state.syncModal.hide();
                 app.ui.renderUI(!hasSnapshot);
-                if (!hasSnapshot || shouldRefreshSnapshot) refreshNetworkData();
+                refreshNetworkData();
             } else {
                 app.ui.showNotice('下载失败：' + resData.message, 'error', 4000);
             }
@@ -269,14 +259,14 @@
             if (!resData.success || !Array.isArray(resData.data) || resData.data.length === 0) return false;
 
             state.myFunds = resData.data;
-            app.persistFunds();
+            app.persistFunds({ synced: true });
             localStorage.setItem('lastSyncCode', code);
-            if (resData.updated_at) localStorage.setItem('lastSyncUpdatedAt', resData.updated_at);
+            storeSyncMetadata(resData);
 
             const hasSnapshot = applySyncSnapshot(resData.snapshot, state.myFunds);
             if (hasSnapshot) {
                 app.ui.renderUI(false);
-                if (needsSnapshotRefresh()) refreshNetworkData();
+                refreshNetworkData({ allowQueue: false });
                 return true;
             }
 
@@ -399,7 +389,68 @@
         });
     }
 
-    async function refreshNetworkData(options = {}) {
+    async function refreshCloudSnapshot(syncCode, options = {}) {
+        const { allowQueue = true, forceHist = false } = options;
+        if (state.refreshInFlight) {
+            if (allowQueue) {
+                state.refreshPending = true;
+                state.refreshPendingOptions = {
+                    ...(state.refreshPendingOptions || {}),
+                    forceHist: Boolean((state.refreshPendingOptions || {}).forceHist || forceHist)
+                };
+            }
+            return;
+        }
+
+        state.refreshInFlight = true;
+        const bar = document.getElementById('refreshBar');
+        bar.style.width = '20%';
+
+        try {
+            const response = await fetch('/api/sync/refresh/' + encodeURIComponent(syncCode), {
+                method: 'POST',
+                headers: { 'Accept': 'application/json' }
+            });
+            const payload = await response.json();
+            if (!response.ok || !payload.success) {
+                throw new Error(payload.error || '云端净值刷新失败');
+            }
+
+            bar.style.width = '80%';
+            if (Array.isArray(payload.data) && payload.data.length > 0) {
+                state.myFunds = payload.data;
+                app.persistFunds({ synced: true });
+            }
+            storeSyncMetadata(payload);
+
+            const hasSnapshot = applySyncSnapshot(payload.snapshot, state.myFunds);
+            if (!hasSnapshot) state.cachedResults = [];
+            app.ui.renderUI(!hasSnapshot);
+            bar.style.width = '100%';
+
+            if (forceHist) {
+                const snapshotTime = payload.snapshot_updated_at
+                    ? `，快照时间 ${utils.formatSyncTime(payload.snapshot_updated_at)}`
+                    : '';
+                app.ui.showNotice(`已刷新统一云端净值${snapshotTime}`, 'success', 4000);
+            }
+        } catch (error) {
+            console.error('refreshCloudSnapshot failed', error);
+            app.ui.showNotice(`云端净值刷新失败：${error.message}`, 'error', 5000);
+            app.ui.renderUI(state.cachedResults.length === 0);
+        } finally {
+            state.refreshInFlight = false;
+            setTimeout(() => { bar.style.width = '0%'; }, 500);
+            if (state.refreshPending) {
+                const pendingOptions = state.refreshPendingOptions || {};
+                state.refreshPending = false;
+                state.refreshPendingOptions = null;
+                refreshNetworkData(pendingOptions);
+            }
+        }
+    }
+
+    async function refreshLocalData(options = {}) {
         const { allowQueue = true, forceHist = false } = options;
         if (state.refreshInFlight) {
             if (allowQueue) {
@@ -505,6 +556,17 @@
                 refreshNetworkData(pendingOptions);
             }
         }
+    }
+
+    function refreshNetworkData(options = {}) {
+        const syncCode = String(localStorage.getItem('lastSyncCode') || '').trim();
+        if (syncCode && !state.cloudSyncDirty) {
+            return refreshCloudSnapshot(syncCode, options);
+        }
+        if (syncCode && state.cloudSyncDirty && options.forceHist) {
+            app.ui.showNotice('本地持仓尚未上传，本次只刷新本机数据', 'error', 4000);
+        }
+        return refreshLocalData(options);
     }
 
     app.data = {

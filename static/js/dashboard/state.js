@@ -9,6 +9,7 @@
         groupListSort: JSON.parse(localStorage.getItem('groupListSort_v1') || '{"key":"dailyProfit","direction":"desc"}'),
         summaryFoldOpenGroups: JSON.parse(localStorage.getItem('summaryFoldOpen_v1') || '[]'),
         syncSnapshotOverrides: JSON.parse(localStorage.getItem('syncSnapshotOverrides_v1') || '{}'),
+        cloudSyncDirty: localStorage.getItem('cloudSyncDirty_v1') === 'true',
         addModal: null,
         syncModal: null,
         importModal: null,
@@ -21,8 +22,15 @@
         noticeTimer: null
     };
 
-    app.persistFunds = () => {
+    app.persistFunds = (options = {}) => {
         localStorage.setItem('myFunds_v2', JSON.stringify(app.state.myFunds));
+        app.state.cloudSyncDirty = options.synced !== true;
+        localStorage.setItem('cloudSyncDirty_v1', app.state.cloudSyncDirty ? 'true' : 'false');
+    };
+
+    app.markCloudSyncClean = () => {
+        app.state.cloudSyncDirty = false;
+        localStorage.setItem('cloudSyncDirty_v1', 'false');
     };
 
     app.persistActiveTab = () => {
