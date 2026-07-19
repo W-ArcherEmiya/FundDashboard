@@ -22,6 +22,7 @@ SYNC_CODE_MAX_LENGTH = 64
 GROUP_MAX_LENGTH = 32
 MAX_FUNDS_PER_SYNC = 500
 MAX_SYNC_SNAPSHOT_ITEMS = 500
+SYNC_SNAPSHOT_METRIC_FIELDS = ('estNav', 'dailyProfit', 'holdProfit', 'totalAsset')
 MAX_EXPORT_ROWS = 1000
 MAX_EXPORT_FILES = 30
 OCR_MAX_IMAGE_BYTES = 8 * 1024 * 1024
@@ -292,6 +293,7 @@ def validate_sync_snapshot(value, funds_data):
             'isActual': bool(item.get('isActual', False)),
             'isBackup': bool(item.get('isBackup', False)),
             'isUnavailable': bool(item.get('isUnavailable', False)),
+            'isRefreshFallback': bool(item.get('isRefreshFallback', False)),
             'isSyncSnapshot': True,
         }
 
@@ -300,14 +302,62 @@ def validate_sync_snapshot(value, funds_data):
             if number is not None:
                 snapshot[field] = number
 
-        required_metrics = ('estNav', 'dailyProfit', 'holdProfit', 'totalAsset')
-        if not snapshot['isUnavailable'] and not all(field in snapshot for field in required_metrics):
+        if not snapshot['isUnavailable'] and not all(field in snapshot for field in SYNC_SNAPSHOT_METRIC_FIELDS):
             normalized.append(None)
             continue
 
         normalized.append(snapshot)
 
     return normalized, None
+
+
+def has_complete_snapshot_metrics(item):
+    return bool(
+        isinstance(item, dict)
+        and not item.get('isUnavailable')
+        and all(normalize_snapshot_number(item.get(field)) is not None for field in SYNC_SNAPSHOT_METRIC_FIELDS)
+    )
+
+
+def merge_snapshot_refresh(funds_data, previous_snapshot, refreshed_snapshot):
+    """Keep the latest usable snapshot when a server-side provider is unavailable."""
+    previous_by_code = {
+        item.get('code'): item
+        for item in (previous_snapshot or [])
+        if isinstance(item, dict) and item.get('code')
+    }
+    refreshed_by_code = {
+        item.get('code'): item
+        for item in (refreshed_snapshot or [])
+        if isinstance(item, dict) and item.get('code')
+    }
+
+    merged = []
+    fallback_count = 0
+    for index, fund in enumerate(funds_data):
+        code = fund['code']
+        direct_refreshed = refreshed_snapshot[index] if index < len(refreshed_snapshot or []) else None
+        fresh = direct_refreshed if isinstance(direct_refreshed, dict) and direct_refreshed.get('code') == code else refreshed_by_code.get(code)
+        if has_complete_snapshot_metrics(fresh):
+            merged.append(fresh)
+            continue
+
+        direct_previous = previous_snapshot[index] if index < len(previous_snapshot or []) else None
+        previous = direct_previous if isinstance(direct_previous, dict) and direct_previous.get('code') == code else previous_by_code.get(code)
+        if has_complete_snapshot_metrics(previous):
+            merged.append({
+                **previous,
+                'group': fund.get('group') or previous.get('group') or '默认分组',
+                'isBackup': True,
+                'isRefreshFallback': True,
+                'isSyncSnapshot': True,
+            })
+            fallback_count += 1
+            continue
+
+        merged.append(fresh)
+
+    return merged, fallback_count
 
 
 def load_data():
@@ -382,12 +432,21 @@ def refresh_sync_snapshot(sync_code, min_interval_seconds=0, dry_run=False):
                     "snapshot": snapshot,
                     "updated_at": updated_at,
                     "snapshot_updated_at": snapshot_updated_at,
+                    "fallback_count": sum(
+                        1 for item in snapshot
+                        if isinstance(item, dict) and item.get('isRefreshFallback')
+                    ),
                 }
 
             refreshed_snapshot = refresh_funds_snapshot(funds_data)
             normalized_snapshot, snapshot_error = validate_sync_snapshot(refreshed_snapshot, funds_data)
             if snapshot_error:
                 raise ValueError(snapshot_error)
+            normalized_snapshot, fallback_count = merge_snapshot_refresh(
+                funds_data,
+                snapshot,
+                normalized_snapshot,
+            )
 
             refreshed_at = utc_now_iso()
             if not dry_run:
@@ -410,6 +469,7 @@ def refresh_sync_snapshot(sync_code, min_interval_seconds=0, dry_run=False):
                 "snapshot": normalized_snapshot,
                 "updated_at": updated_at or refreshed_at,
                 "snapshot_updated_at": refreshed_at,
+                "fallback_count": fallback_count,
             }
 
 

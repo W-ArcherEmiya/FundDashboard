@@ -243,6 +243,53 @@ class FundDashboardAppTests(unittest.TestCase):
         self.assertEqual(response.status_code, 404)
         self.assertFalse(response.get_json()['success'])
 
+    def test_client_sync_refresh_preserves_uploaded_snapshot_when_provider_fails(self):
+        uploaded_snapshot = {
+            'code': '000001',
+            'group': '稳健',
+            'name': '截图基金',
+            'estNav': 1.31,
+            'dailyProfit': 1.1,
+            'holdProfit': 2.1,
+            'totalAsset': 13.1,
+            'gztime': '截图导入',
+            'valid': True,
+            'isActual': True,
+            'isBackup': False,
+            'isUnavailable': False,
+            'isSyncSnapshot': True,
+        }
+        save_response = self.client.post('/api/sync/save', json={
+            'sync_code': '159357',
+            'data': [{'code': '000001', 'shares': '10.0', 'cost': '1.1', 'group': '稳健'}],
+            'snapshot': [uploaded_snapshot],
+        })
+        self.assertEqual(save_response.status_code, 200)
+
+        original_refresh = fund_refresh.refresh_funds_snapshot
+        try:
+            fund_refresh.refresh_funds_snapshot = lambda funds: [{
+                'code': funds[0]['code'],
+                'group': funds[0]['group'],
+                'name': '基金 000001',
+                'gztime': '暂无盘中估算',
+                'valid': True,
+                'isActual': True,
+                'isBackup': True,
+                'isUnavailable': True,
+            }]
+            response = self.client.post('/api/sync/refresh/159357')
+        finally:
+            fund_refresh.refresh_funds_snapshot = original_refresh
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload['fallback_count'], 1)
+        self.assertEqual(payload['snapshot'][0]['totalAsset'], 13.1)
+        self.assertEqual(payload['snapshot'][0]['dailyProfit'], 1.1)
+        self.assertTrue(payload['snapshot'][0]['isRefreshFallback'])
+        self.assertFalse(payload['snapshot'][0]['isUnavailable'])
+
     def test_admin_refresh_cloud_snapshots_requires_configured_token(self):
         os.environ.pop(fund_app.REFRESH_TOKEN_ENV, None)
 

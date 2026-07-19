@@ -29,6 +29,17 @@
         );
     }
 
+    function getCloudSnapshotApplyDecision(cloudSyncDirty, incomingSnapshot, currentSnapshot) {
+        if (cloudSyncDirty) return { apply: false, reason: 'local-changes' };
+
+        const incomingCompleteCount = (incomingSnapshot || []).filter(hasCompleteDisplayMetrics).length;
+        const currentCompleteCount = (currentSnapshot || []).filter(hasCompleteDisplayMetrics).length;
+        if (incomingCompleteCount === 0 && currentCompleteCount > 0) {
+            return { apply: false, reason: 'incoming-unavailable' };
+        }
+        return { apply: true, reason: '' };
+    }
+
     function normalizeActiveTab(activeTabId, groups) {
         if (activeTabId === 'tab-summary') {
             return { activeTabId: 'tab-summary', currentActiveGroup: null };
@@ -230,6 +241,7 @@
     return {
         getGroups,
         hasCompleteDisplayMetrics,
+        getCloudSnapshotApplyDecision,
         normalizeActiveTab,
         buildDisplayData,
         summarizeDisplayData,

@@ -8,7 +8,8 @@
     const HIST_TIMEOUT_MS = 2500;
     const HIST_RENDER_BATCH_SIZE = 5;
     const HIST_FETCH_CONCURRENCY = 6;
-    const SYNC_OVERRIDE_FIELDS = ['totalAsset', 'holdProfit'];
+    const UPLOAD_REFRESH_WAIT_MS = 45 * 1000;
+    const SYNC_OVERRIDE_FIELDS = ['estRate', 'estNav', 'dailyProfit', 'totalAsset', 'holdProfit'];
 
     function loadHistCache() {
         try {
@@ -129,6 +130,35 @@
         });
     }
 
+    function countCompleteSnapshots(snapshot) {
+        return (snapshot || []).filter(item => logic.hasCompleteDisplayMetrics(item)).length;
+    }
+
+    async function waitForRefreshIdle(timeoutMs = UPLOAD_REFRESH_WAIT_MS) {
+        const deadline = Date.now() + timeoutMs;
+        while (state.refreshInFlight && Date.now() < deadline) {
+            await new Promise(resolve => setTimeout(resolve, 200));
+        }
+        return !state.refreshInFlight;
+    }
+
+    async function prepareUploadSnapshot() {
+        if (state.refreshInFlight && !await waitForRefreshIdle()) {
+            throw new Error('本地净值刷新超时，请稍后再同步');
+        }
+
+        let snapshot = buildSyncSnapshot();
+        if (countCompleteSnapshots(snapshot) === 0) {
+            await refreshLocalData({ allowQueue: false, forceHist: true });
+            snapshot = buildSyncSnapshot();
+        }
+
+        if (countCompleteSnapshots(snapshot) === 0) {
+            throw new Error('当前没有可用净值，已取消上传以避免云端数据变空');
+        }
+        return snapshot;
+    }
+
     function applySyncSnapshot(snapshot, funds) {
         if (!Array.isArray(snapshot) || !snapshot.length) return false;
 
@@ -182,14 +212,16 @@
         }
 
         const btn = document.getElementById('btnUpload');
-        btn.innerHTML = '上传中...';
+        btn.innerHTML = '准备快照...';
         btn.disabled = true;
 
         try {
+            const snapshot = await prepareUploadSnapshot();
+            btn.innerHTML = '上传中...';
             const response = await fetch('/api/sync/save', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ sync_code: code, data: state.myFunds, snapshot: buildSyncSnapshot() })
+                body: JSON.stringify({ sync_code: code, data: state.myFunds, snapshot })
             });
             const resData = await response.json();
             if (resData.success) {
@@ -198,12 +230,12 @@
                 app.markCloudSyncClean();
                 app.ui.showNotice('数据已上传，正在生成统一云端净值', 'success', 4000);
                 state.syncModal.hide();
-                refreshNetworkData({ allowQueue: true });
+                refreshNetworkData({ allowQueue: true, forceHist: true });
             } else {
                 app.ui.showNotice('上传失败：' + resData.error, 'error', 4000);
             }
         } catch (e) {
-            app.ui.showNotice('上传失败，网络连接异常', 'error', 4000);
+            app.ui.showNotice(`上传失败：${e.message || '网络连接异常'}`, 'error', 5000);
         } finally {
             btn.innerHTML = '覆盖到云端';
             btn.disabled = false;
@@ -417,6 +449,21 @@
             }
 
             bar.style.width = '80%';
+            const applyDecision = logic.getCloudSnapshotApplyDecision(
+                state.cloudSyncDirty,
+                payload.snapshot,
+                state.cachedResults
+            );
+            if (applyDecision.reason === 'local-changes') {
+                if (forceHist) {
+                    app.ui.showNotice('检测到本地持仓已修改，已忽略旧的云端刷新结果', 'success', 4000);
+                }
+                return;
+            }
+            if (applyDecision.reason === 'incoming-unavailable') {
+                throw new Error('云端行情暂不可用，已保留当前数据');
+            }
+
             if (Array.isArray(payload.data) && payload.data.length > 0) {
                 state.myFunds = payload.data;
                 app.persistFunds({ synced: true });
@@ -432,7 +479,11 @@
                 const snapshotTime = payload.snapshot_updated_at
                     ? `，快照时间 ${utils.formatSyncTime(payload.snapshot_updated_at)}`
                     : '';
-                app.ui.showNotice(`已刷新统一云端净值${snapshotTime}`, 'success', 4000);
+                const fallbackCount = Number(payload.fallback_count) || 0;
+                const message = fallbackCount > 0
+                    ? `云端行情暂不可用，已保留 ${fallbackCount} 项上传快照${snapshotTime}`
+                    : `已刷新统一云端净值${snapshotTime}`;
+                app.ui.showNotice(message, 'success', 5000);
             }
         } catch (error) {
             console.error('refreshCloudSnapshot failed', error);
