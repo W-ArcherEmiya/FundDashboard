@@ -45,6 +45,26 @@ runTest('buildDisplayData treats malformed cached snapshots as loading', () => {
     assert.equal(displayData[0].valid, true);
 });
 
+runTest('cloud snapshot response never overwrites unsynced local changes', () => {
+    const decision = logic.getCloudSnapshotApplyDecision(
+        true,
+        [{ valid: true, estNav: 1.2, dailyProfit: 1, holdProfit: 2, totalAsset: 12 }],
+        []
+    );
+
+    assert.deepEqual(decision, { apply: false, reason: 'local-changes' });
+});
+
+runTest('unavailable cloud response keeps the current complete snapshot', () => {
+    const decision = logic.getCloudSnapshotApplyDecision(
+        false,
+        [{ valid: true, isUnavailable: true }],
+        [{ valid: true, estNav: 1.2, dailyProfit: 1, holdProfit: 2, totalAsset: 12 }]
+    );
+
+    assert.deepEqual(decision, { apply: false, reason: 'incoming-unavailable' });
+});
+
 runTest('summarizeDisplayData aggregates totals and group profit', () => {
     const summary = logic.summarizeDisplayData([
         { valid: true, isLoading: false, estNav: 1.2, dailyProfit: 12, holdProfit: 20, totalAsset: 100, gztime: '2026-04-11 14:00', group: '稳健' },

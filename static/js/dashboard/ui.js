@@ -194,6 +194,7 @@
         const distribution = buildAssetDistribution(displayData);
         const settledCount = displayData.filter(item => logic.hasCompleteDisplayMetrics(item)).length;
         const unavailableCount = displayData.filter(item => item.isUnavailable).length;
+        const resolvedCount = settledCount + unavailableCount;
         const groupRows = renderSummaryGroupFolds(displayData, distribution, groupStats);
 
         const stripSegments = distribution.map((item, index) => {
@@ -204,7 +205,10 @@
         const syncHint = localStorage.getItem('lastSyncCode')
             ? '本机已记住同步码，可直接恢复云端数据。'
             : '当前设备还没有保存同步码。';
-        const settledStatusText = settledCount === displayData.length ? '已完成本轮计算' : '正在补齐净值';
+        const isFullySettled = settledCount === displayData.length;
+        const settledStatusText = isFullySettled
+            ? '已完成本轮计算'
+            : (resolvedCount === displayData.length ? `${unavailableCount} 项净值暂不可用` : '正在补齐净值');
         const marketTimeText = utils.formatMarketTime(lastTime);
 
         return `
@@ -218,7 +222,7 @@
                                 <div class="summary-main-num">${renderAmountText(totalAssets, { currency: true })}</div>
                             </div>
                             <div class="summary-status-stack">
-                                <div class="summary-status ${settledCount === displayData.length ? 'summary-status-ready' : 'summary-status-loading'}">
+                                <div class="summary-status ${isFullySettled ? 'summary-status-ready' : 'summary-status-loading'}">
                                     ${settledStatusText}
                                 </div>
                                 <div class="summary-status-meta">${state.myFunds.length} 项持仓 | ${settledCount} 项已计算</div>
@@ -762,13 +766,30 @@
         const holdProfit = Number(candidate && candidate.holdProfit);
         if (!/^\d{6}$/.test(code || '') || !Number.isFinite(amount) || !Number.isFinite(holdProfit)) return;
 
+        const shares = Number(candidate && candidate.shares);
+        const rawNav = candidate && candidate.nav;
+        const nav = rawNav !== '' && rawNav !== undefined ? Number(rawNav) : NaN;
+        const inferredNav = Number.isFinite(nav) && nav > 0
+            ? nav
+            : (Number.isFinite(shares) && shares > 0 ? amount / shares : NaN);
+        const rawDailyProfit = candidate && candidate.dailyProfit;
+        const dailyProfit = rawDailyProfit !== '' && rawDailyProfit !== undefined
+            ? Number(rawDailyProfit)
+            : NaN;
+        const rawRate = candidate && candidate.rate;
+        const estRate = rawRate !== '' && rawRate !== undefined ? Number(rawRate) : NaN;
+
         state.syncSnapshotOverrides = state.syncSnapshotOverrides || {};
-        state.syncSnapshotOverrides[code] = {
+        const override = {
             ...(state.syncSnapshotOverrides[code] || {}),
             totalAsset: amount,
             holdProfit,
             updatedAt: new Date().toISOString()
         };
+        if (Number.isFinite(inferredNav)) override.estNav = inferredNav;
+        if (Number.isFinite(dailyProfit)) override.dailyProfit = dailyProfit;
+        if (Number.isFinite(estRate)) override.estRate = estRate;
+        state.syncSnapshotOverrides[code] = override;
         app.persistSyncSnapshotOverrides();
     }
 
