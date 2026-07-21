@@ -553,80 +553,6 @@
             </article>`;
     }
 
-    function renderFundCard(item) {
-        if (item.isLoading) {
-            return `
-                <article class="fund-card fund-card-loading">
-                    <div class="fund-card-loading-row">
-                        <span class="spinner-border spinner-border-sm text-primary"></span>
-                        <span class="loading-text">正在刷新这只基金的最新净值…</span>
-                    </div>
-                </article>`;
-        }
-
-        if (!item.valid) {
-            return `
-                <article class="fund-card fund-card-error" data-action="open-edit" data-code="${utils.escapeHtml(item.code)}">
-                    <div class="fund-card-header">
-                        <div>
-                            <div class="fund-card-title danger-text">加载失败 ${utils.escapeHtml(item.code)}</div>
-                            <div class="fund-card-subtitle">点击卡片可检查代码、份额或分组配置。</div>
-                        </div>
-                        <div class="status-pill status-pill-up">异常</div>
-                    </div>
-                </article>`;
-        }
-
-        if (item.isUnavailable) {
-            return `
-                <article class="fund-card fund-card-unavailable" data-action="open-edit" data-code="${utils.escapeHtml(item.code)}">
-                    <div class="fund-card-header">
-                        <div>
-                            <div class="fund-card-title">${utils.escapeHtml(item.name)}</div>
-                            <div class="fund-card-subtitle">${utils.escapeHtml(item.code)}</div>
-                        </div>
-                        <div class="status-pill status-pill-flat">待更新</div>
-                    </div>
-                    <p class="unavailable-copy">暂无可靠盘中估算，等待实际净值或下次缓存命中。</p>
-                </article>`;
-        }
-
-        const pillClass = item.estRate > 0 ? 'status-pill-up' : (item.estRate < 0 ? 'status-pill-down' : 'status-pill-flat');
-        const badgeText = `${item.isActual ? '实' : '估'} ${utils.formatNumber(item.estRate, true)}%`;
-        const itemClass = item.isBackup ? 'fund-card-backup' : '';
-        const navLabel = item.isActual ? '实际净值' : '估算净值';
-        const dailyLabel = item.isActual ? '当日(实)' : '当日(估)';
-
-        return `
-            <article class="fund-card ${itemClass}" data-action="open-edit" data-code="${utils.escapeHtml(item.code)}">
-                <div class="fund-card-header">
-                    <div>
-                        <div class="fund-card-title">${utils.escapeHtml(item.name)}</div>
-                        <div class="fund-card-subtitle">${utils.escapeHtml(item.code)} · ${utils.escapeHtml(item.gztime)}</div>
-                    </div>
-                    <div class="status-pill ${pillClass}">${badgeText}</div>
-                </div>
-                <div class="fund-stats">
-                    <div class="stat-field">
-                        <div class="stat-field-label">${navLabel}</div>
-                        <div class="stat-field-value">${item.estNav.toFixed(4)}</div>
-                    </div>
-                    <div class="stat-field">
-                        <div class="stat-field-label">${dailyLabel}</div>
-                        <div class="stat-field-value ${utils.getColorClass(item.dailyProfit)}">${renderAmountText(item.dailyProfit, { forceSign: true })}</div>
-                    </div>
-                    <div class="stat-field">
-                        <div class="stat-field-label">持有盈亏</div>
-                        <div class="stat-field-value ${utils.getColorClass(item.holdProfit)}">${renderAmountText(item.holdProfit, { forceSign: true })}</div>
-                    </div>
-                    <div class="stat-field">
-                        <div class="stat-field-label">总金额</div>
-                        <div class="stat-field-value">${renderAmountText(item.totalAsset, { currency: true })}</div>
-                    </div>
-                </div>
-            </article>`;
-    }
-
     function buildAssetDistribution(displayData) {
         const totals = new Map();
 
@@ -840,22 +766,6 @@
                     ${options}
                 </select>
             </div>`;
-    }
-
-    function getImportSourceLabel(candidate) {
-        const source = String(candidate && candidate.source || '');
-        if (source === 'layout') return '坐标解析';
-        if (source === 'text') return '文本兜底';
-        if (source === 'textFallback') return '文本回填';
-        if (source === 'layoutCandidate') return '坐标候选';
-        if (source === 'textCandidate') return '文本候选';
-        if (source === 'layoutUnmatched') return '坐标未匹配';
-        if (source === 'textUnmatched') return '文本未匹配';
-        if (source === 'selectedCandidate') return '手选候选';
-        if (source === 'manualCode') return '手动代码';
-        if (source === 'detail') return '详情页';
-        if (source === 'fields') return '字段抽取';
-        return '';
     }
 
     function buildImportRow(candidate, index) {

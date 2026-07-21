@@ -1,7 +1,6 @@
-from flask import Flask, render_template, request, jsonify, send_from_directory
-from datetime import datetime, timezone
 from contextlib import contextmanager
 import csv
+from datetime import datetime, timezone
 import hashlib
 import json
 import os
@@ -10,12 +9,13 @@ import tempfile
 import threading
 import time
 
+from flask import Flask, jsonify, render_template, request, send_from_directory
+
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 9 * 1024 * 1024
 
-# 确保存储文件和你的 app.py 在同一个目录
-DATA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'sync_data.json')
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_FILE = os.path.join(BASE_DIR, 'sync_data.json')
 EXPORT_DIR = os.path.join(BASE_DIR, 'exports')
 RAPIDOCR_MODEL_DIR = os.path.join(BASE_DIR, 'ocr_models', 'rapidocr')
 SYNC_CODE_MAX_LENGTH = 64

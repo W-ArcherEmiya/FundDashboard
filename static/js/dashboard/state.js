@@ -1,15 +1,18 @@
 (() => {
     const app = window.FundDashboard = window.FundDashboard || {};
+    const { keys, read, readJson, write, writeJson } = app.storage;
+    const isArray = Array.isArray;
+    const isObject = value => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
     app.state = {
-        myFunds: JSON.parse(localStorage.getItem('myFunds_v2') || '[]'),
+        myFunds: readJson(keys.funds, [], isArray),
         cachedResults: [],
-        activeTabId: localStorage.getItem('lastActiveTab') || 'tab-summary',
+        activeTabId: read(keys.activeTab, 'tab-summary'),
         currentActiveGroup: null,
-        groupListSort: JSON.parse(localStorage.getItem('groupListSort_v1') || '{"key":"dailyProfit","direction":"desc"}'),
-        summaryFoldOpenGroups: JSON.parse(localStorage.getItem('summaryFoldOpen_v1') || '[]'),
-        syncSnapshotOverrides: JSON.parse(localStorage.getItem('syncSnapshotOverrides_v1') || '{}'),
-        cloudSyncDirty: localStorage.getItem('cloudSyncDirty_v1') === 'true',
+        groupListSort: readJson(keys.groupListSort, { key: 'dailyProfit', direction: 'desc' }, isObject),
+        summaryFoldOpenGroups: readJson(keys.summaryFolds, [], isArray),
+        syncSnapshotOverrides: readJson(keys.syncSnapshotOverrides, {}, isObject),
+        cloudSyncDirty: read(keys.cloudSyncDirty, 'false') === 'true',
         addModal: null,
         syncModal: null,
         importModal: null,
@@ -23,29 +26,29 @@
     };
 
     app.persistFunds = (options = {}) => {
-        localStorage.setItem('myFunds_v2', JSON.stringify(app.state.myFunds));
+        writeJson(keys.funds, app.state.myFunds);
         app.state.cloudSyncDirty = options.synced !== true;
-        localStorage.setItem('cloudSyncDirty_v1', app.state.cloudSyncDirty ? 'true' : 'false');
+        write(keys.cloudSyncDirty, app.state.cloudSyncDirty);
     };
 
     app.markCloudSyncClean = () => {
         app.state.cloudSyncDirty = false;
-        localStorage.setItem('cloudSyncDirty_v1', 'false');
+        write(keys.cloudSyncDirty, false);
     };
 
     app.persistActiveTab = () => {
-        localStorage.setItem('lastActiveTab', app.state.activeTabId);
+        write(keys.activeTab, app.state.activeTabId);
     };
 
     app.persistSummaryFolds = () => {
-        localStorage.setItem('summaryFoldOpen_v1', JSON.stringify(app.state.summaryFoldOpenGroups));
+        writeJson(keys.summaryFolds, app.state.summaryFoldOpenGroups);
     };
 
     app.persistGroupListSort = () => {
-        localStorage.setItem('groupListSort_v1', JSON.stringify(app.state.groupListSort));
+        writeJson(keys.groupListSort, app.state.groupListSort);
     };
 
     app.persistSyncSnapshotOverrides = () => {
-        localStorage.setItem('syncSnapshotOverrides_v1', JSON.stringify(app.state.syncSnapshotOverrides || {}));
+        writeJson(keys.syncSnapshotOverrides, app.state.syncSnapshotOverrides || {});
     };
 })();

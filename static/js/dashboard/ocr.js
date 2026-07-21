@@ -985,30 +985,6 @@
         };
     }
 
-    function applySequentialMetrics(text, candidates) {
-        if (!candidates.some(candidate => !candidate.amount)) return;
-
-        const values = [...String(text || '').matchAll(/[+-]?\d[\d,，,]*(?:\.\d{2})/g)]
-            .map(match => {
-                const end = match.index + match[0].length;
-                const next = text.slice(end, end + 3);
-                return {
-                    raw: match[0],
-                    number: normalizeNumber(match[0]),
-                    isPercent: /^%/.test(next)
-                };
-            })
-            .filter(item => item.number && !item.isPercent);
-
-        const amounts = values.filter(item => !/^[+-]/.test(item.raw) && Number(item.number) >= 1);
-        const profits = values.filter(item => /^[+-]/.test(item.raw));
-
-        candidates.forEach((candidate, index) => {
-            if (!candidate.amount && amounts[index]) candidate.amount = amounts[index].number;
-            if (!candidate.holdProfit && profits[index * 2]) candidate.holdProfit = profits[index * 2].number;
-        });
-    }
-
     function fetchPingzhongNav(code, timeoutMs = 3500) {
         return new Promise(resolve => {
             const script = document.createElement('script');

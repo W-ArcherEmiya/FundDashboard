@@ -1,6 +1,6 @@
+import os
 import subprocess
 import sys
-import os
 from pathlib import Path
 
 
@@ -10,6 +10,7 @@ COMMANDS = [
     [sys.executable, "-m", "unittest", "discover", "-s", "tests", "-v"],
     ["node", "tests/test_dashboard_logic.js"],
     ["node", "tests/test_ocr_parser.js"],
+    ["node", "tests/test_storage.js"],
 ]
 
 

@@ -305,10 +305,8 @@ button {
 .fact-label,
 .hero-stat-label,
 .fund-card-subtitle,
-.stat-field-label,
 .empty-state-desc,
 .note-copy,
-.unavailable-copy,
 .loading-text {
     color: var(--lark-text-body);
     font-size: 13px;
@@ -480,8 +478,7 @@ button {
 
 .group-row-asset,
 .fact-value,
-.hero-stat-value,
-.stat-field-value {
+.hero-stat-value {
     color: var(--lark-text-title);
     font-weight: 400;
     min-width: 0;
@@ -846,25 +843,11 @@ button {
     font-weight: 400;
 }
 
-.fund-card,
 .add-tile {
     background: var(--lark-card-bg);
     border: 1px solid var(--divider);
     border-radius: var(--radius-card);
     box-shadow: var(--shadow-soft);
-}
-
-.fund-card {
-    padding: 18px;
-    cursor: pointer;
-    transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
-}
-
-.fund-card-header {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 12px;
 }
 
 .fund-card-subtitle {
@@ -896,24 +879,6 @@ button {
 .status-pill-flat {
     background: rgba(143, 149, 158, 0.14);
     color: var(--lark-text-body);
-}
-
-.fund-stats {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 14px 16px;
-    margin-top: 18px;
-}
-
-.stat-field {
-    min-width: 0;
-}
-
-.stat-field-value {
-    margin-top: 6px;
-    font-size: clamp(16px, 2vw, 18px);
-    line-height: 1.2;
-    overflow-wrap: anywhere;
 }
 
 .num-fit {
@@ -951,25 +916,6 @@ button {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
-}
-
-.fund-card-loading-row {
-    display: inline-flex;
-    align-items: center;
-    gap: 10px;
-}
-
-.fund-card-error {
-    border-color: rgba(245, 63, 63, 0.24);
-    background: rgba(245, 63, 63, 0.03);
-}
-
-.fund-card-unavailable {
-    background: linear-gradient(180deg, #FFFFFF 0%, #FBFBFC 100%);
-}
-
-.fund-card-backup {
-    border-left: 3px solid #B8BDC7;
 }
 
 .danger-text,
@@ -2248,10 +2194,6 @@ button {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
-    .fund-stats {
-        grid-template-columns: repeat(4, minmax(0, 1fr));
-    }
-
     .fab-btn {
         display: none;
     }
@@ -2627,8 +2569,7 @@ button {
     }
 
     .section-head,
-    .group-row,
-    .fund-card-header {
+    .group-row {
         flex-direction: column;
         align-items: flex-start;
     }
