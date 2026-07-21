@@ -132,9 +132,11 @@ FundDashboard/
 │   │   └── dashboard.css     # 看板页面样式
 │   └── js/
 │       └── dashboard/
+│           ├── storage.js    # 本地存储键名与容错读写
 │           ├── state.js      # 前端运行状态与本地持久化
 │           ├── utils.js      # 数字格式化与安全转义工具
 │           ├── data.js       # 同步接口与基金数据抓取逻辑
+│           ├── ocr.js        # 截图 OCR 解析与基金匹配
 │           ├── ui.js         # 页面渲染与交互逻辑
 │           └── main.js       # 启动入口与全局事件绑定
 ├── templates/
