@@ -1,6 +1,7 @@
 import unittest
 from datetime import datetime, timezone
 
+import fund_refresh
 from fund_refresh import build_snapshot_item
 
 
@@ -8,6 +9,24 @@ SAME_DAY_HISTORY_MS = int(datetime(2026, 4, 11, 15, 0, tzinfo=timezone.utc).time
 
 
 class FundRefreshTests(unittest.TestCase):
+    def test_fetch_latest_navs_prefers_history_and_falls_back_to_realtime(self):
+        original_history = fund_refresh.fetch_history
+        original_realtime = fund_refresh.fetch_realtime_estimate
+        try:
+            fund_refresh.fetch_history = lambda code: (
+                {'latest': 1.1085} if code == '016663' else None
+            )
+            fund_refresh.fetch_realtime_estimate = lambda code: (
+                {'dwjz': '2.5'} if code == '000001' else None
+            )
+
+            navs = fund_refresh.fetch_latest_navs(['016663', '000001', '016663'])
+        finally:
+            fund_refresh.fetch_history = original_history
+            fund_refresh.fetch_realtime_estimate = original_realtime
+
+        self.assertEqual(navs, {'016663': 1.1085, '000001': 2.5})
+
     def test_build_snapshot_item_uses_realtime_when_newer_than_history(self):
         item = build_snapshot_item(
             {'code': '000001', 'shares': '10', 'cost': '1.2', 'group': '稳健'},

@@ -658,11 +658,14 @@
         bar.style.width = `${safePercent}%`;
     }
 
-    async function fillSharesFromAmount(code, amount) {
+    async function fillSharesFromAmount(code, amount, preferredNav = null) {
         const holdingAmount = Number(amount);
         if (!code || !Number.isFinite(holdingAmount) || holdingAmount <= 0) return false;
 
-        const nav = await app.ocr.fetchLatestNav(code);
+        const suppliedNav = Number(preferredNav);
+        const nav = Number.isFinite(suppliedNav) && suppliedNav > 0
+            ? suppliedNav
+            : await app.ocr.fetchLatestNav(code);
         if (!nav) return false;
 
         const shares = holdingAmount / nav;
@@ -1129,6 +1132,11 @@
             });
         });
 
+        const pendingCodes = uniqueCandidates
+            .filter(candidate => candidate.code && !candidate.shares)
+            .map(candidate => candidate.code);
+        const navByCode = await app.ocr.fetchLatestNavBatch(pendingCodes);
+
         for (let index = 0; index < uniqueCandidates.length; index += 1) {
             const candidate = uniqueCandidates[index];
             setImportProcessingStatus('recognize', index, uniqueCandidates.length);
@@ -1136,7 +1144,11 @@
                 setImportProgress(85 + Math.round(((index + 1) / uniqueCandidates.length) * 12));
             }
             if (candidate.code && !candidate.shares) {
-                const inferred = await fillSharesFromAmount(candidate.code, candidate.amount);
+                const inferred = await fillSharesFromAmount(
+                    candidate.code,
+                    candidate.amount,
+                    navByCode[candidate.code]
+                );
                 if (inferred) {
                     candidate.shares = inferred.shares;
                     candidate.nav = inferred.nav;

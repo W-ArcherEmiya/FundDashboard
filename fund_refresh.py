@@ -279,3 +279,34 @@ def refresh_funds_snapshot(funds: list[dict[str, Any]]) -> list[dict[str, Any] |
             snapshot[index] = item
 
     return snapshot
+
+
+def fetch_latest_navs(codes: list[str]) -> dict[str, float]:
+    """Fetch latest usable NAV values concurrently for screenshot imports."""
+    unique_codes = list(dict.fromkeys(
+        str(code).strip() for code in codes
+        if re.fullmatch(r"\d{6}", str(code).strip())
+    ))
+    if not unique_codes:
+        return {}
+
+    def fetch_one(code: str) -> tuple[str, float | None]:
+        history = fetch_history(code)
+        nav = to_float((history or {}).get("latest"))
+        if nav > 0:
+            return code, nav
+
+        realtime = fetch_realtime_estimate(code)
+        nav = to_float((realtime or {}).get("dwjz") or (realtime or {}).get("gsz"))
+        return code, nav if nav > 0 else None
+
+    navs: dict[str, float] = {}
+    workers = max(1, min(MAX_REFRESH_WORKERS, len(unique_codes)))
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = [executor.submit(fetch_one, code) for code in unique_codes]
+        for future in as_completed(futures):
+            code, nav = future.result()
+            if nav is not None:
+                navs[code] = nav
+
+    return navs
