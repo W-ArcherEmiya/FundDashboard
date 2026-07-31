@@ -12,8 +12,13 @@ from urllib.request import Request, urlopen
 
 REQUEST_TIMEOUT_SECONDS = 8
 MAX_REFRESH_WORKERS = 6
+MAX_NAV_WORKERS = 6
 USER_AGENT = "Mozilla/5.0 FundDashboard/1.0"
 EASTMONEY_HISTORY_URL = "https://fund.eastmoney.com/pingzhongdata/{code}.js?rt={timestamp}"
+EASTMONEY_LATEST_NAV_URL = (
+    "https://api.fund.eastmoney.com/f10/lsjz"
+    "?fundCode={code}&pageIndex=1&pageSize=1"
+)
 FUNDGZ_URL = "https://fundgz.1234567.com.cn/js/{code}.js?rt={timestamp}"
 
 
@@ -21,8 +26,9 @@ def utc_now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
-def fetch_text(url: str, timeout: int = REQUEST_TIMEOUT_SECONDS) -> str:
-    request = Request(url, headers={"User-Agent": USER_AGENT})
+def fetch_text(url: str, timeout: int = REQUEST_TIMEOUT_SECONDS, headers: dict[str, str] | None = None) -> str:
+    request_headers = {"User-Agent": USER_AGENT, **(headers or {})}
+    request = Request(url, headers=request_headers)
     with urlopen(request, timeout=timeout) as response:
         return response.read().decode("utf-8-sig", errors="replace")
 
@@ -147,6 +153,22 @@ def fetch_history(code: str) -> dict[str, Any] | None:
         }
 
     return None
+
+
+def fetch_latest_nav(code: str) -> float | None:
+    """Fetch only the latest NAV record instead of the full history script."""
+    url = EASTMONEY_LATEST_NAV_URL.format(code=code)
+    try:
+        source = fetch_text(url, headers={"Referer": "https://fundf10.eastmoney.com/"})
+        payload = json.loads(source)
+    except (OSError, URLError, TimeoutError, json.JSONDecodeError):
+        return None
+
+    records = ((payload.get("Data") or {}).get("LSJZList") or []) if isinstance(payload, dict) else []
+    if not records or not isinstance(records[0], dict):
+        return None
+    nav = to_float(records[0].get("DWJZ"))
+    return nav if nav > 0 else None
 
 
 def build_snapshot_item(
@@ -291,9 +313,8 @@ def fetch_latest_navs(codes: list[str]) -> dict[str, float]:
         return {}
 
     def fetch_one(code: str) -> tuple[str, float | None]:
-        history = fetch_history(code)
-        nav = to_float((history or {}).get("latest"))
-        if nav > 0:
+        nav = fetch_latest_nav(code)
+        if nav is not None:
             return code, nav
 
         realtime = fetch_realtime_estimate(code)
@@ -301,7 +322,7 @@ def fetch_latest_navs(codes: list[str]) -> dict[str, float]:
         return code, nav if nav > 0 else None
 
     navs: dict[str, float] = {}
-    workers = max(1, min(MAX_REFRESH_WORKERS, len(unique_codes)))
+    workers = max(1, min(MAX_NAV_WORKERS, len(unique_codes)))
     with ThreadPoolExecutor(max_workers=workers) as executor:
         futures = [executor.submit(fetch_one, code) for code in unique_codes]
         for future in as_completed(futures):

@@ -9,23 +9,33 @@ SAME_DAY_HISTORY_MS = int(datetime(2026, 4, 11, 15, 0, tzinfo=timezone.utc).time
 
 
 class FundRefreshTests(unittest.TestCase):
-    def test_fetch_latest_navs_prefers_history_and_falls_back_to_realtime(self):
-        original_history = fund_refresh.fetch_history
+    def test_fetch_latest_navs_prefers_latest_nav_api_and_falls_back_to_realtime(self):
+        original_latest_nav = fund_refresh.fetch_latest_nav
         original_realtime = fund_refresh.fetch_realtime_estimate
         try:
-            fund_refresh.fetch_history = lambda code: (
-                {'latest': 1.1085} if code == '016663' else None
-            )
+            fund_refresh.fetch_latest_nav = lambda code: 1.1085 if code == '016663' else None
             fund_refresh.fetch_realtime_estimate = lambda code: (
                 {'dwjz': '2.5'} if code == '000001' else None
             )
 
             navs = fund_refresh.fetch_latest_navs(['016663', '000001', '016663'])
         finally:
-            fund_refresh.fetch_history = original_history
+            fund_refresh.fetch_latest_nav = original_latest_nav
             fund_refresh.fetch_realtime_estimate = original_realtime
 
         self.assertEqual(navs, {'016663': 1.1085, '000001': 2.5})
+
+    def test_fetch_latest_nav_parses_lightweight_api_response(self):
+        original_fetch_text = fund_refresh.fetch_text
+        try:
+            fund_refresh.fetch_text = lambda *_args, **_kwargs: (
+                '{"Data":{"LSJZList":[{"DWJZ":"1.0918"}]},"ErrCode":0}'
+            )
+            nav = fund_refresh.fetch_latest_nav('016663')
+        finally:
+            fund_refresh.fetch_text = original_fetch_text
+
+        self.assertEqual(nav, 1.0918)
 
     def test_build_snapshot_item_uses_realtime_when_newer_than_history(self):
         item = build_snapshot_item(
