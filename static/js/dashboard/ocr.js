@@ -232,6 +232,11 @@
             };
 
             document.head.appendChild(script);
+        }).catch(error => {
+            // A temporary CDN/network failure must not poison every later
+            // screenshot in the same browser session.
+            fundCatalogPromise = null;
+            throw error;
         });
 
         return fundCatalogPromise;
@@ -463,18 +468,24 @@
                     .join(''),
                 false
             ));
-            if (!isLikelyHoldingName(name)) return;
 
             const holdProfitBlock = rowBlocks
                 .filter(block => block.cx >= rightColumnLeft)
-                .filter(block => isSignedNumberText(block.text) && !isPercentText(block.text))
+                .filter(block => isHoldingProfitText(block.text) && !isPercentText(block.text))
                 .sort((a, b) => Math.abs(a.cy - amountBlock.cy) - Math.abs(b.cy - amountBlock.cy))[0];
             const holdProfit = normalizeNumber(holdProfitBlock && holdProfitBlock.text);
             if (!holdProfit) return;
 
+            // OCR frequently drops a leading plus sign. Coordinates already
+            // prove that this value belongs to the holding-profit column, so
+            // requiring the sign would incorrectly discard the entire row.
+            // Keep rows whose name is absent as unmatched candidates so the
+            // user can select the correct fund instead of losing the holding.
+            const hasRecognizableName = isLikelyHoldingName(name);
+
             rows.push({
-                name,
-                truncated: /\.\.\.|…/.test(name),
+                name: hasRecognizableName ? name : '',
+                truncated: hasRecognizableName && /\.\.\.|…/.test(name),
                 amount: normalizeNumber(amountBlock.text),
                 holdProfit,
                 index: amountBlock.top,
@@ -508,6 +519,10 @@
 
     function isSignedNumberText(text) {
         return /^[+-]\d[\d,，]*(?:\.\d+)?$/.test(String(text || '').trim());
+    }
+
+    function isHoldingProfitText(text) {
+        return /^[+-]?\d[\d,，]*(?:\.\d+)?$/.test(String(text || '').trim());
     }
 
     function isPercentText(text) {
@@ -1390,19 +1405,56 @@
         };
     }
 
+    function getRecognitionQuality(result) {
+        const candidates = Array.isArray(result && result.candidates) ? result.candidates : [];
+        const matchedCount = candidates.filter(candidate => candidate.code).length;
+        const completeCount = candidates.filter(candidate => candidate.amount && candidate.holdProfit).length;
+        return candidates.length * 1000
+            + matchedCount * 100
+            + completeCount * 20
+            + Math.min(500, Number(result && result.ocrTextLength) || 0);
+    }
+
+    function hasUsableRecognition(result) {
+        return Boolean(result && (result.code || (Array.isArray(result.candidates) && result.candidates.length)));
+    }
+
     async function recognizeBestAlipayScreenshot(file, onProgress) {
-        try {
-            return await recognizeServerScreenshot(file, onProgress);
-        } catch (error) {
-            console.warn('server OCR unavailable, falling back to Tesseract', error);
-            if (typeof onProgress === 'function') onProgress(8, '服务端 OCR 不可用，改用浏览器 OCR');
-            const result = await recognizeAlipayScreenshot(file, onProgress);
-            return {
-                ...result,
-                ocrEngine: 'tesseract.js',
-                backendFallbackReason: error.message || '服务端 OCR 不可用'
-            };
+        let bestServerResult = null;
+        let serverError = null;
+
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+            try {
+                if (attempt > 0 && typeof onProgress === 'function') {
+                    onProgress(18, '服务端 OCR 结果不完整，正在重试');
+                }
+                const result = await recognizeServerScreenshot(file, onProgress);
+                if (!bestServerResult || getRecognitionQuality(result) > getRecognitionQuality(bestServerResult)) {
+                    bestServerResult = result;
+                }
+                if (hasUsableRecognition(result)) return result;
+            } catch (error) {
+                serverError = error;
+                console.warn(`server OCR attempt ${attempt + 1} failed`, error);
+            }
         }
+
+        try {
+            if (typeof onProgress === 'function') onProgress(8, '服务端 OCR 未得到有效基金，改用浏览器 OCR');
+            const result = await recognizeAlipayScreenshot(file, onProgress);
+            if (hasUsableRecognition(result) || !bestServerResult) {
+                return {
+                    ...result,
+                    ocrEngine: 'tesseract.js',
+                    backendFallbackReason: serverError?.message || '服务端 OCR 未得到有效基金'
+                };
+            }
+        } catch (fallbackError) {
+            console.warn('browser OCR fallback failed', fallbackError);
+            if (!bestServerResult) throw fallbackError;
+        }
+
+        return bestServerResult;
     }
 
     app.ocr = {

@@ -34,6 +34,7 @@ DATA_LOCK = threading.Lock()
 SYNC_REFRESH_LOCKS_GUARD = threading.Lock()
 SYNC_REFRESH_LOCKS = {}
 OCR_ENGINE_LOCK = threading.Lock()
+OCR_INFERENCE_LOCK = threading.Lock()
 OCR_ENGINE_STATE = {"name": None, "engine": None, "error": None}
 EXPORT_FIELDS = [
     'code',
@@ -780,9 +781,13 @@ def extract_paddleocr_text(result):
 
 
 def run_server_ocr(engine_name, engine, image_path):
-    if engine_name == "paddleocr":
-        return extract_ocr_payload(engine_name, engine.ocr(image_path, cls=True))
-    return extract_ocr_payload(engine_name, engine(image_path))
+    # RapidOCR/PaddleOCR instances are shared by all WSGI request threads.
+    # Their inference sessions are not guaranteed to be thread-safe, so a
+    # second upload must not mutate the engine while the first is still read.
+    with OCR_INFERENCE_LOCK:
+        if engine_name == "paddleocr":
+            return extract_ocr_payload(engine_name, engine.ocr(image_path, cls=True))
+        return extract_ocr_payload(engine_name, engine(image_path))
 
 @app.route('/')
 def index():

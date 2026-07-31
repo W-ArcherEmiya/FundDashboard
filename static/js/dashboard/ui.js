@@ -1036,6 +1036,44 @@
 
         const seenUnmatched = new Set();
 
+        const getCandidateQuality = candidate => {
+            let score = 0;
+            if (candidate.amount) score += 3;
+            if (candidate.holdProfit) score += 3;
+            if (candidate.name && !/^基金 \d{6}$/.test(candidate.name)) score += 2;
+            ['dailyProfit', 'shares', 'cost', 'nav', 'rate'].forEach(field => {
+                if (candidate[field]) score += 1;
+            });
+            if (/layout/i.test(String(candidate.source || ''))) score += 1;
+            return score;
+        };
+
+        const mergeDuplicateCandidate = (existing, candidate) => {
+            const preferIncoming = getCandidateQuality(candidate) > getCandidateQuality(existing);
+            const metricFields = ['amount', 'holdProfit', 'dailyProfit'];
+            const fillFields = ['name', 'type', 'shares', 'cost', 'nav', 'rate', 'source'];
+
+            metricFields.forEach(field => {
+                if (candidate[field] && (!existing[field] || preferIncoming)) {
+                    existing[field] = candidate[field];
+                }
+            });
+            fillFields.forEach(field => {
+                const existingIsGenericName = field === 'name' && /^基金 \d{6}$/.test(existing[field] || '');
+                if (candidate[field] && (!existing[field] || existingIsGenericName)) {
+                    existing[field] = candidate[field];
+                }
+            });
+            existing.fieldSources = {
+                ...(existing.fieldSources || {}),
+                ...(candidate.fieldSources || {})
+            };
+            existing.suggestions = (existing.suggestions || []).length >= (candidate.suggestions || []).length
+                ? existing.suggestions
+                : candidate.suggestions;
+            existing.unmatched = false;
+        };
+
         const getMetricKey = candidate => {
             const amount = Number(candidate.amount);
             const holdProfit = Number(candidate.holdProfit);
@@ -1044,7 +1082,11 @@
         };
 
         candidates.forEach(candidate => {
-            if (candidate.code && seenCodes.has(candidate.code)) return;
+            if (candidate.code && seenCodes.has(candidate.code)) {
+                const duplicate = uniqueCandidates.find(existing => existing.code === candidate.code);
+                if (duplicate) mergeDuplicateCandidate(duplicate, candidate);
+                return;
+            }
             const metricKey = getMetricKey(candidate);
             if (candidate.code) {
                 seenCodes.add(candidate.code);
@@ -1190,21 +1232,35 @@
         try {
             const parsedResults = [];
             const allCandidates = [];
+            const failedFiles = [];
 
             for (let index = 0; index < files.length; index += 1) {
                 const file = files[index];
                 setImportProcessingStatus('upload', index, files.length);
-                const parsed = await app.ocr.recognizeBestAlipayScreenshot(file, (percent, label) => {
-                    const currentPercent = Math.max(8, Math.min(100, percent || 0));
-                    const phase = String(label || '').includes('上传') ? 'upload' : 'recognize';
-                    const recognitionPercent = Math.round(((index + currentPercent / 100) / files.length) * 84);
-                    const overallPercent = Math.max(8, Math.min(92, recognitionPercent));
-                    setImportProgress(overallPercent);
-                    setImportProcessingStatus(phase, index, files.length);
-                });
+                try {
+                    const parsed = await app.ocr.recognizeBestAlipayScreenshot(file, (percent, label) => {
+                        const currentPercent = Math.max(8, Math.min(100, percent || 0));
+                        const phase = String(label || '').includes('上传') ? 'upload' : 'recognize';
+                        const recognitionPercent = Math.round(((index + currentPercent / 100) / files.length) * 84);
+                        const overallPercent = Math.max(8, Math.min(92, recognitionPercent));
+                        setImportProgress(overallPercent);
+                        setImportProcessingStatus(phase, index, files.length);
+                    });
 
-                parsedResults.push(parsed);
-                allCandidates.push(...buildCandidatesFromParsed(parsed));
+                    parsedResults.push(parsed);
+                    allCandidates.push(...buildCandidatesFromParsed(parsed));
+                } catch (error) {
+                    console.error('screenshot recognition failed', file.name, error);
+                    failedFiles.push({
+                        name: file.name || `截图 ${index + 1}`,
+                        message: error && error.message ? error.message : '未知错误'
+                    });
+                    parsedResults.push({
+                        rawText: '',
+                        ocrTextLength: 0,
+                        message: `${file.name || `截图 ${index + 1}`} 识别失败`
+                    });
+                }
             }
 
             await hydrateImportCandidates(allCandidates);
@@ -1214,13 +1270,15 @@
                 const diagnostics = buildBatchImportDiagnostics(parsedResults);
                 setImportView('results');
                 renderImportDiagnostics(diagnostics);
-                status.textContent = diagnostics.message || '未识别到可填字段';
-                showNotice(diagnostics.message || '未识别到基金代码、份额或成本，请手动填写', 'error', 5000);
+                const failedText = failedFiles.length ? `${failedFiles.length} 张截图识别失败；` : '';
+                status.textContent = `${failedText}${diagnostics.message || '未识别到可填字段'}`;
+                showNotice(status.textContent || '未识别到基金代码、份额或成本，请手动填写', 'error', 5000);
             } else {
                 setImportView('results');
                 const engines = [...new Set(parsedResults.map(parsed => parsed.ocrEngine).filter(Boolean))];
                 const engineText = engines.length ? `（${engines.join('、')}）` : '';
-                showNotice(`${files.length > 1 ? '批量截图' : '截图'}读取完成${engineText}，已持仓基金已自动填入原分组`, 'success', 5000);
+                const failureText = failedFiles.length ? `，另有 ${failedFiles.length} 张失败，可重新选择这些截图` : '';
+                showNotice(`${files.length > 1 ? '批量截图' : '截图'}读取完成${engineText}${failureText}，已持仓基金已自动填入原分组`, failedFiles.length ? 'info' : 'success', 6000);
             }
         } catch (error) {
             console.error('importFromScreenshot failed', error);
