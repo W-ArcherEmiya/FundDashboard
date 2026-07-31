@@ -16,6 +16,27 @@ function assertAlmostEqual(actual, expected, epsilon = 1e-9) {
     assert.ok(Math.abs(actual - expected) <= epsilon, `expected ${actual} to be within ${epsilon} of ${expected}`);
 }
 
+runTest('sortImportCandidatesForReview puts unresolved rows first and keeps screenshot order', () => {
+    const completeA = { code: '000001', shares: '100', name: '完整基金A' };
+    const unmatchedA = { code: '', shares: '', name: '未匹配基金A', unmatched: true };
+    const incomplete = { code: '000002', shares: '', name: '未反推份额' };
+    const completeB = { code: '000003', shares: '200', name: '完整基金B' };
+    const unmatchedB = { code: '', shares: '', name: '未匹配基金B', suggestions: [{ code: '000004' }] };
+
+    const sorted = logic.sortImportCandidatesForReview([
+        completeA,
+        unmatchedA,
+        incomplete,
+        completeB,
+        unmatchedB
+    ]);
+
+    assert.deepEqual(sorted, [unmatchedA, unmatchedB, incomplete, completeA, completeB]);
+    assert.equal(logic.getImportCandidateReviewRank(unmatchedA), 0);
+    assert.equal(logic.getImportCandidateReviewRank(incomplete), 1);
+    assert.equal(logic.getImportCandidateReviewRank(completeA), 2);
+});
+
 runTest('normalizeActiveTab falls back to summary when active group is missing', () => {
     const result = logic.normalizeActiveTab('tab-group-3', ['稳健', '高风险']);
 
