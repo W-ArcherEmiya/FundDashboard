@@ -45,4 +45,38 @@ runTest('parseAlipayFundText extracts generic asset fields from detail screensho
     assert.equal(parsed.candidates[0].source, 'fields');
 });
 
+runTest('layout parser keeps rows when a plus sign or fund name is missing', () => {
+    const block = (text, left, top, right, bottom) => ({ text, left, top, right, bottom });
+    const blocks = [
+        block('名称', 50, 40, 130, 80),
+        block('金额/昨日收益', 400, 40, 610, 80),
+        block('持有收益/率', 700, 40, 870, 80),
+        block('测试稳健债券C', 50, 120, 300, 160),
+        block('1,000.00', 430, 120, 570, 160),
+        block('+1.20', 450, 175, 540, 205),
+        block('12.34', 730, 120, 830, 160),
+        block('+1.25%', 730, 175, 840, 205),
+        block('500.00', 430, 270, 560, 310),
+        block('+0.10', 450, 325, 540, 355),
+        block('-8.00', 730, 270, 830, 310),
+        block('-1.57%', 730, 325, 840, 355)
+    ];
+    const catalog = [{
+        code: '000001',
+        name: '测试稳健债券C',
+        type: '债券型',
+        normalizedName: '测试稳健债券C'
+    }];
+
+    const candidates = ocr.findFundCandidates('', catalog, blocks);
+
+    assert.equal(candidates.length, 2);
+    assert.equal(candidates[0].code, '000001');
+    assert.equal(candidates[0].holdProfit, '12.34');
+    assert.equal(candidates[1].code, '');
+    assert.equal(candidates[1].amount, '500');
+    assert.equal(candidates[1].holdProfit, '-8');
+    assert.equal(candidates[1].unmatched, true);
+});
+
 console.log('All OCR parser tests passed.');

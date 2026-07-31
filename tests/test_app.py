@@ -475,6 +475,36 @@ class FundDashboardAppTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertFalse(response.get_json()['success'])
 
+    def test_shared_ocr_engine_inference_is_serialized(self):
+        active_calls = 0
+        max_active_calls = 0
+        calls_lock = threading.Lock()
+
+        def fake_engine(_image_path):
+            nonlocal active_calls, max_active_calls
+            with calls_lock:
+                active_calls += 1
+                max_active_calls = max(max_active_calls, active_calls)
+            time.sleep(0.03)
+            with calls_lock:
+                active_calls -= 1
+            return []
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            futures = [
+                executor.submit(
+                    fund_app.run_server_ocr,
+                    'rapidocr',
+                    fake_engine,
+                    f'image-{index}.png'
+                )
+                for index in range(2)
+            ]
+            for future in futures:
+                self.assertEqual(future.result(), ('', []))
+
+        self.assertEqual(max_active_calls, 1)
+
     def test_export_funds_analysis_creates_downloadable_csv(self):
         response = self.client.post('/api/export/funds-analysis', json={
             'rows': [{
