@@ -690,6 +690,13 @@
         return (totalCost / sharesValue).toFixed(4);
     }
 
+    function getCachedImportNav(code) {
+        const fundIndex = state.myFunds.findIndex(fund => fund.code === code);
+        if (fundIndex < 0) return null;
+        const nav = Number(state.cachedResults[fundIndex]?.estNav);
+        return Number.isFinite(nav) && nav > 0 ? nav : null;
+    }
+
     function storeCandidateSnapshotOverride(code, candidate) {
         const amount = Number(candidate && candidate.amount);
         const holdProfit = Number(candidate && candidate.holdProfit);
@@ -1147,7 +1154,7 @@
                 const inferred = await fillSharesFromAmount(
                     candidate.code,
                     candidate.amount,
-                    navByCode[candidate.code]
+                    navByCode[candidate.code] || getCachedImportNav(candidate.code)
                 );
                 if (inferred) {
                     candidate.shares = inferred.shares;
