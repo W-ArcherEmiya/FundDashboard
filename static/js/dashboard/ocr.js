@@ -1098,6 +1098,27 @@
         return null;
     }
 
+    async function fetchLatestNavBatch(codes) {
+        const validCodes = [...new Set((codes || [])
+            .map(code => String(code || '').trim())
+            .filter(code => /^\d{6}$/.test(code)))];
+        if (!validCodes.length) return {};
+
+        try {
+            const response = await fetch('/api/fund/navs', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ codes: validCodes })
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || !payload.success || !payload.navs) return {};
+            return payload.navs;
+        } catch (error) {
+            console.warn('batch NAV lookup failed', error);
+            return {};
+        }
+    }
+
     function extractNameNearCode(text, code) {
         if (!code) return '';
 
@@ -1462,6 +1483,7 @@
         extractAssetFields,
         findFundCandidates,
         fetchLatestNav,
+        fetchLatestNavBatch,
         recognizeAlipayScreenshot,
         recognizeServerScreenshot,
         recognizeBestAlipayScreenshot

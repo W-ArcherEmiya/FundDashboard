@@ -909,6 +909,43 @@ def market_refresh():
     })
 
 
+@app.route('/api/fund/navs', methods=['POST'])
+def fund_navs():
+    """Return current NAV values in one request for screenshot share inference."""
+    req = request.get_json(silent=True)
+    if not isinstance(req, dict):
+        return jsonify({"success": False, "error": "请求体必须是 JSON 对象"}), 400
+
+    raw_codes = req.get('codes')
+    if not isinstance(raw_codes, list) or not raw_codes:
+        return jsonify({"success": False, "error": "基金代码列表不能为空"}), 400
+    if len(raw_codes) > 100:
+        return jsonify({"success": False, "error": "单次最多查询 100 只基金"}), 400
+
+    codes = []
+    for raw_code in raw_codes:
+        code = str(raw_code or '').strip()
+        if not re.fullmatch(r'\d{6}', code):
+            return jsonify({"success": False, "error": f"基金代码无效：{code or '空值'}"}), 400
+        if code not in codes:
+            codes.append(code)
+
+    try:
+        from fund_refresh import fetch_latest_navs
+
+        navs = fetch_latest_navs(codes)
+    except Exception:
+        app.logger.exception("Batch NAV lookup failed")
+        return jsonify({"success": False, "error": "服务端批量净值查询失败"}), 500
+
+    return jsonify({
+        "success": True,
+        "navs": navs,
+        "requested_count": len(codes),
+        "resolved_count": len(navs),
+    })
+
+
 @app.route('/exports/<filename>', methods=['GET'])
 def download_export(filename):
     if not re.fullmatch(r'funds-analysis-\d{8}-\d{6}-\d{6}\.csv', filename):

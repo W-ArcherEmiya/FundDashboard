@@ -451,6 +451,35 @@ class FundDashboardAppTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn('资产代码无效', response.get_json()['error'])
 
+    def test_fund_navs_returns_one_deduplicated_batch(self):
+        original_fetch = fund_refresh.fetch_latest_navs
+        calls = []
+        try:
+            def fake_fetch(codes):
+                calls.append(codes)
+                return {'016663': 1.1085, '000001': 2.5}
+
+            fund_refresh.fetch_latest_navs = fake_fetch
+            response = self.client.post('/api/fund/navs', json={
+                'codes': ['016663', '000001', '016663']
+            })
+        finally:
+            fund_refresh.fetch_latest_navs = original_fetch
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload['success'])
+        self.assertEqual(payload['requested_count'], 2)
+        self.assertEqual(payload['resolved_count'], 2)
+        self.assertEqual(payload['navs']['016663'], 1.1085)
+        self.assertEqual(calls, [['016663', '000001']])
+
+    def test_fund_navs_rejects_invalid_code(self):
+        response = self.client.post('/api/fund/navs', json={'codes': ['016663', 'ABC']})
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(response.get_json()['success'])
+
     def test_sync_save_rejects_empty_fund_payload(self):
         response = self.client.post(
             '/api/sync/save',
