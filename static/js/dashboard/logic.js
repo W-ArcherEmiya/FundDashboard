@@ -12,6 +12,24 @@
         return [...new Set((myFunds || []).map(item => item.group || '默认分组'))];
     }
 
+    function getImportCandidateReviewRank(candidate) {
+        const hasCode = /^\d{6}$/.test(String(candidate && candidate.code || ''));
+        if (!hasCode || candidate.unmatched) return 0;
+        if (!candidate.shares) return 1;
+        return 2;
+    }
+
+    function sortImportCandidatesForReview(candidates) {
+        return (candidates || [])
+            .map((candidate, index) => ({ candidate, index }))
+            .sort((left, right) => {
+                const rankDelta = getImportCandidateReviewRank(left.candidate)
+                    - getImportCandidateReviewRank(right.candidate);
+                return rankDelta || left.index - right.index;
+            })
+            .map(entry => entry.candidate);
+    }
+
     function isFiniteMetric(value) {
         return Number.isFinite(Number(value));
     }
@@ -240,6 +258,8 @@
 
     return {
         getGroups,
+        getImportCandidateReviewRank,
+        sortImportCandidatesForReview,
         hasCompleteDisplayMetrics,
         getCloudSnapshotApplyDecision,
         normalizeActiveTab,

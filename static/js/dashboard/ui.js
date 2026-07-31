@@ -1147,14 +1147,20 @@
             }
         }
 
+        const reviewCandidates = app.logic.sortImportCandidatesForReview(uniqueCandidates);
+        const attentionCount = reviewCandidates.filter(candidate =>
+            app.logic.getImportCandidateReviewRank(candidate) < 2
+        ).length;
+
         state.importAutoUpdatedCount = 0;
         state.importEditingIndex = null;
-        state.importCandidates = uniqueCandidates;
-        renderImportResults(uniqueCandidates);
+        state.importCandidates = reviewCandidates;
+        renderImportResults(reviewCandidates);
         if (status) {
-            const existingCount = uniqueCandidates.filter(candidate => candidate.existing).length;
-            status.textContent = uniqueCandidates.length
-                ? `已读取 ${uniqueCandidates.length} 只基金${existingCount ? `，其中 ${existingCount} 只已持仓并已填入原分组` : ''}`
+            const existingCount = reviewCandidates.filter(candidate => candidate.existing).length;
+            const attentionText = attentionCount ? `，${attentionCount} 只需处理并已置顶` : '';
+            status.textContent = reviewCandidates.length
+                ? `已读取 ${reviewCandidates.length} 只基金${attentionText}${existingCount ? `，其中 ${existingCount} 只已持仓并已填入原分组` : ''}`
                 : '没有识别到可添加的基金';
         }
     }
