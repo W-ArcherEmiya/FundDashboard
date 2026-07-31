@@ -1,70 +1,8 @@
 (() => {
     const app = window.FundDashboard = window.FundDashboard || {};
     const { state, utils, logic } = app;
-    const HIST_CACHE_KEY = 'fundHistCache_v1';
-    const HIST_CACHE_TTL_MS = 36 * 60 * 60 * 1000;
-    const HIST_REVALIDATE_MS = 6 * 60 * 60 * 1000;
-    const ESTIMATE_WAIT_MS = 4000;
-    const HIST_TIMEOUT_MS = 2500;
-    const HIST_RENDER_BATCH_SIZE = 5;
-    const HIST_FETCH_CONCURRENCY = 6;
     const UPLOAD_REFRESH_WAIT_MS = 45 * 1000;
     const SYNC_OVERRIDE_FIELDS = ['estRate', 'estNav', 'dailyProfit', 'totalAsset', 'holdProfit'];
-
-    function loadHistCache() {
-        try {
-            const raw = localStorage.getItem(HIST_CACHE_KEY);
-            if (!raw) return {};
-
-            const parsed = JSON.parse(raw);
-            return parsed && typeof parsed === 'object' ? parsed : {};
-        } catch {
-            return {};
-        }
-    }
-
-    function saveHistCache(cache) {
-        localStorage.setItem(HIST_CACHE_KEY, JSON.stringify(cache));
-    }
-
-    function getHistCacheEntry(code) {
-        const cache = loadHistCache();
-        const entry = cache[code];
-        if (!entry || typeof entry !== 'object') return null;
-
-        if ('value' in entry) {
-            const cachedAt = Number(entry.cachedAt) || 0;
-            if (!cachedAt || Date.now() - cachedAt > HIST_CACHE_TTL_MS) return null;
-            const value = entry.value && typeof entry.value === 'object' ? entry.value : null;
-            return value ? { value, cachedAt } : null;
-        }
-
-        return { value: entry, cachedAt: 0 };
-    }
-
-    function getCachedHist(code) {
-        const entry = getHistCacheEntry(code);
-        return entry ? entry.value : null;
-    }
-
-    function setCachedHist(code, hist) {
-        const cache = loadHistCache();
-        cache[code] = {
-            value: hist,
-            cachedAt: Date.now()
-        };
-        saveHistCache(cache);
-    }
-
-    function shouldFetchHist(code, forceHist = false) {
-        if (forceHist) return true;
-
-        const entry = getHistCacheEntry(code);
-        if (!entry || !entry.value) return true;
-        if (!entry.cachedAt) return true;
-
-        return Date.now() - entry.cachedAt > HIST_REVALIDATE_MS;
-    }
 
     function mergeSyncOverride(result) {
         if (!result || !result.code) return result;
@@ -373,54 +311,6 @@
         }
     }
 
-    function fetchPingzhong(code, timeoutMs = HIST_TIMEOUT_MS) {
-        return new Promise(resolve => {
-            utils.resetPingzhongGlobals();
-
-            const script = document.createElement('script');
-            script.async = true;
-            script.src = `https://fund.eastmoney.com/pingzhongdata/${code}.js?rt=${Date.now()}`;
-            let timerId = null;
-            let finished = false;
-
-            const finish = result => {
-                if (finished) return;
-                finished = true;
-                if (timerId) clearTimeout(timerId);
-                if (script.parentNode) script.parentNode.removeChild(script);
-                utils.resetPingzhongGlobals();
-                resolve(result);
-            };
-
-            script.onload = () => {
-                if (window.fS_name && (window.ishb || (window.Data_millionCopiesIncome && window.Data_millionCopiesIncome.length > 0))) {
-                    const incomeHistory = Array.isArray(window.Data_millionCopiesIncome) ? window.Data_millionCopiesIncome : [];
-                    const latestIncome = incomeHistory.length > 0 ? incomeHistory[incomeHistory.length - 1] : null;
-                    const prevIncome = incomeHistory.length > 1 ? incomeHistory[incomeHistory.length - 2] : latestIncome;
-                    finish({
-                        name: window.fS_name,
-                        latest: 1,
-                        prev: 1,
-                        dateMs: latestIncome ? latestIncome[0] : Date.now(),
-                        isMoneyFund: true,
-                        millionIncome: latestIncome ? Number(latestIncome[1]) : 0,
-                        prevMillionIncome: prevIncome ? Number(prevIncome[1]) : 0
-                    });
-                } else if (window.fS_name && window.Data_netWorthTrend && window.Data_netWorthTrend.length > 0) {
-                    const history = window.Data_netWorthTrend;
-                    const latest = history[history.length - 1];
-                    const prev = history.length > 1 ? history[history.length - 2] : latest;
-                    finish({ name: window.fS_name, latest: latest.y, prev: prev.y, dateMs: latest.x });
-                } else {
-                    finish(null);
-                }
-            };
-            script.onerror = () => finish(null);
-            document.head.appendChild(script);
-            timerId = setTimeout(() => finish(null), timeoutMs);
-        });
-    }
-
     function queuePendingRefresh(options = {}) {
         state.refreshPending = true;
         state.refreshPendingOptions = {
@@ -438,47 +328,69 @@
         refreshNetworkData(pendingOptions);
     }
 
+    function mergeMarketSnapshot(snapshot) {
+        const incomingByCode = new Map();
+        (snapshot || []).forEach(item => {
+            if (item && item.code) incomingByCode.set(item.code, item);
+        });
+
+        const currentByCode = new Map();
+        (state.cachedResults || []).forEach(item => {
+            if (item && item.code) currentByCode.set(item.code, item);
+        });
+
+        return state.myFunds.map((fund, index) => {
+            const direct = snapshot && snapshot[index];
+            const incoming = direct && direct.code === fund.code
+                ? direct
+                : incomingByCode.get(fund.code);
+            const current = currentByCode.get(fund.code);
+
+            if (logic.hasCompleteDisplayMetrics(incoming)) {
+                return mergeSyncOverride({
+                    ...incoming,
+                    code: fund.code,
+                    group: fund.group || incoming.group || '默认分组'
+                });
+            }
+            if (logic.hasCompleteDisplayMetrics(current)) {
+                return { ...current, isRefreshFallback: true };
+            }
+            return incoming || {
+                code: fund.code,
+                group: fund.group || '默认分组',
+                name: `基金 ${fund.code}`,
+                gztime: '行情暂不可用',
+                valid: true,
+                isUnavailable: true,
+                isBackup: true
+            };
+        });
+    }
+
     async function refreshCloudSnapshot(syncCode, options = {}) {
-        const { allowQueue = true, forceHist = false, skipLocalRefresh = false } = options;
+        const { allowQueue = true, forceHist = false } = options;
         if (state.refreshInFlight) {
             if (allowQueue) queuePendingRefresh(options);
             return;
         }
-
-        if (!skipLocalRefresh) {
-            await refreshLocalData({ allowQueue: false, forceHist, deferPending: true });
-        }
         if (state.cloudSyncDirty) {
-            if (forceHist) {
-                app.ui.showNotice('检测到本地持仓已修改，本次结果未发布到云端', 'success', 4000);
-            }
-            flushPendingRefresh();
-            return;
-        }
-
-        const submittedSnapshot = buildSyncSnapshot();
-        if (countCompleteSnapshots(submittedSnapshot) === 0) {
-            app.ui.showNotice('浏览器未获取到可用净值，已保留原云端数据', 'error', 5000);
-            flushPendingRefresh();
-            return;
+            return refreshLocalData(options);
         }
 
         state.refreshInFlight = true;
         const bar = document.getElementById('refreshBar');
-        bar.style.width = '70%';
+        bar.style.width = '15%';
 
         try {
-            const response = await fetch('/api/sync/publish/' + encodeURIComponent(syncCode), {
+            const forceQuery = forceHist ? '?force=1' : '';
+            const response = await fetch('/api/sync/refresh/' + encodeURIComponent(syncCode) + forceQuery, {
                 method: 'POST',
-                headers: {
-                    'Accept': 'application/json',
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ snapshot: submittedSnapshot })
+                headers: { 'Accept': 'application/json' }
             });
             const payload = await response.json();
             if (!response.ok || !payload.success) {
-                throw new Error(payload.error || '云端净值发布失败');
+                throw new Error(payload.error || '云端净值刷新失败');
             }
 
             bar.style.width = '80%';
@@ -494,7 +406,8 @@
                 return;
             }
             if (applyDecision.reason === 'incoming-unavailable') {
-                throw new Error('云端行情暂不可用，已保留当前数据');
+                if (forceHist) app.ui.showNotice('部分行情暂不可用，已保留上一次完整结果', 'error', 5000);
+                return;
             }
 
             if (Array.isArray(payload.data) && payload.data.length > 0) {
@@ -513,13 +426,13 @@
                     ? `，快照时间 ${utils.formatSyncTime(payload.snapshot_updated_at)}`
                     : '';
                 const message = payload.reused
-                    ? `已采用另一台设备刚发布的统一快照${snapshotTime}`
-                    : `已通过浏览器更新统一云端净值${snapshotTime}`;
+                    ? `已读取统一云端快照${snapshotTime}`
+                    : `已完成 ${countCompleteSnapshots(payload.snapshot)}/${state.myFunds.length} 项净值计算${snapshotTime}`;
                 app.ui.showNotice(message, 'success', 5000);
             }
         } catch (error) {
             console.error('refreshCloudSnapshot failed', error);
-            app.ui.showNotice(`云端净值发布失败：${error.message}`, 'error', 5000);
+            app.ui.showNotice(`云端净值刷新失败：${error.message}，已保留当前结果`, 'error', 5000);
             app.ui.renderUI(state.cachedResults.length === 0);
         } finally {
             state.refreshInFlight = false;
@@ -529,7 +442,7 @@
     }
 
     async function refreshLocalData(options = {}) {
-        const { allowQueue = true, forceHist = false, deferPending = false } = options;
+        const { allowQueue = true, deferPending = false } = options;
         if (state.refreshInFlight) {
             if (allowQueue) queuePendingRefresh(options);
             return;
@@ -543,82 +456,30 @@
 
         state.refreshInFlight = true;
         const bar = document.getElementById('refreshBar');
-        bar.style.width = '10%';
-        let estimateScripts = [];
+        bar.style.width = '15%';
 
         try {
-            let tempResults = {};
-            window.jsonpgz = function(data) {
-                if (data && data.fundcode) tempResults[data.fundcode] = data;
-            };
-
-            const promises = state.myFunds.map(fund => new Promise(resolve => {
-                const script = document.createElement('script');
-                script.async = true;
-                script.src = `https://fundgz.1234567.com.cn/js/${fund.code}.js?rt=${Date.now()}`;
-                script.onload = resolve;
-                script.onerror = resolve;
-                estimateScripts.push(script);
-                document.head.appendChild(script);
-            }));
-
-            await Promise.race([Promise.all(promises), new Promise(res => setTimeout(res, ESTIMATE_WAIT_MS))]);
-            bar.style.width = '40%';
-            utils.removeInjectedScripts(estimateScripts);
-            window.jsonpgz = undefined;
-
-            const newCachedResults = state.myFunds.map(fund => {
-                const cachedHist = getCachedHist(fund.code);
-                const rt = tempResults[fund.code];
-                return mergeSyncOverride(logic.buildFundResult(fund, cachedHist, rt));
+            const response = await fetch('/api/market/refresh', {
+                method: 'POST',
+                headers: {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ funds: state.myFunds })
             });
-            applyResults(newCachedResults);
-
-            const histJobs = state.myFunds
-                .map((fund, index) => ({ fund, index }))
-                .filter(({ fund }) => shouldFetchHist(fund.code, forceHist));
-
-            if (histJobs.length === 0) {
-                state.cachedResults = newCachedResults;
-                bar.style.width = '100%';
-                app.ui.renderUI(false);
-                return;
+            const payload = await response.json();
+            if (!response.ok || !payload.success) {
+                throw new Error(payload.error || '服务端行情刷新失败');
             }
 
-            let updatedCount = 0;
-            for (let offset = 0; offset < histJobs.length; offset += HIST_FETCH_CONCURRENCY) {
-                const batch = histJobs.slice(offset, offset + HIST_FETCH_CONCURRENCY);
-                const histories = await Promise.all(batch.map(({ fund, index }) => (
-                    fetchPingzhong(fund.code).then(hist => ({
-                        index,
-                        fund,
-                        hist
-                    }))
-                )));
-
-                histories.forEach(({ index, fund, hist }) => {
-                    const rt = tempResults[fund.code];
-                    if (hist) setCachedHist(fund.code, hist);
-                    newCachedResults[index] = mergeSyncOverride(logic.buildFundResult(fund, hist || getCachedHist(fund.code), rt));
-                });
-
-                updatedCount += histories.length;
-                bar.style.width = `${40 + (updatedCount / histJobs.length) * 60}%`;
-
-                if (updatedCount % HIST_RENDER_BATCH_SIZE === 0 || updatedCount >= histJobs.length) {
-                    applyResults([...newCachedResults]);
-                }
-            }
-
-            state.cachedResults = newCachedResults;
+            bar.style.width = '85%';
+            applyResults(mergeMarketSnapshot(payload.snapshot));
             bar.style.width = '100%';
-            app.ui.renderUI(false);
         } catch (error) {
             console.error('refreshNetworkData failed', error);
-            app.ui.showNotice('行情刷新失败，稍后会自动重试', 'error', 5000);
+            app.ui.showNotice(`行情刷新失败：${error.message}，已保留当前结果`, 'error', 5000);
+            app.ui.renderUI(state.cachedResults.length === 0);
         } finally {
-            utils.removeInjectedScripts(estimateScripts);
-            window.jsonpgz = undefined;
             state.refreshInFlight = false;
             setTimeout(() => { bar.style.width = '0%'; }, 500);
             if (!deferPending) flushPendingRefresh();

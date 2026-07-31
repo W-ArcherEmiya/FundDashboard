@@ -65,6 +65,53 @@ class FundDashboardAppTests(unittest.TestCase):
         self.assertIsNone(data)
         self.assertIn('资产代码无效', error)
 
+    def test_market_refresh_returns_one_server_calculated_snapshot(self):
+        original_refresh = fund_refresh.refresh_funds_snapshot
+        refresh_calls = []
+        try:
+            def fake_refresh(funds):
+                refresh_calls.append(funds)
+                return [{
+                    'code': funds[0]['code'],
+                    'group': funds[0]['group'],
+                    'name': '测试基金',
+                    'estNav': 1.25,
+                    'dailyProfit': 2.5,
+                    'holdProfit': 5.0,
+                    'totalAsset': 125.0,
+                    'gztime': '服务端刷新',
+                    'valid': True,
+                    'isActual': False,
+                    'isBackup': False,
+                    'isUnavailable': False,
+                }]
+
+            fund_refresh.refresh_funds_snapshot = fake_refresh
+            response = self.client.post('/api/market/refresh', json={
+                'funds': [
+                    {'code': '000001', 'shares': '100', 'cost': '1.2', 'group': '稳健'}
+                ]
+            })
+        finally:
+            fund_refresh.refresh_funds_snapshot = original_refresh
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload['success'])
+        self.assertEqual(payload['complete_count'], 1)
+        self.assertEqual(payload['unavailable_count'], 0)
+        self.assertEqual(payload['snapshot'][0]['code'], '000001')
+        self.assertEqual(payload['snapshot'][0]['dailyProfit'], 2.5)
+        self.assertEqual(len(refresh_calls), 1)
+
+    def test_market_refresh_rejects_invalid_holdings(self):
+        response = self.client.post('/api/market/refresh', json={
+            'funds': [{'code': 'bad-code', 'shares': '1', 'cost': '1', 'group': '稳健'}]
+        })
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(response.get_json()['success'])
+
     def test_sync_save_and_load_round_trip(self):
         save_response = self.client.post(
             '/api/sync/save',
