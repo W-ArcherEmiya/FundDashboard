@@ -27,7 +27,7 @@ MAX_EXPORT_ROWS = 1000
 MAX_EXPORT_FILES = 30
 OCR_MAX_IMAGE_BYTES = 8 * 1024 * 1024
 REFRESH_TOKEN_ENV = 'FUND_REFRESH_TOKEN'
-CLIENT_REFRESH_REUSE_SECONDS = 30
+CLIENT_REFRESH_REUSE_SECONDS = 5 * 60
 REFRESH_LOCK_WAIT_SECONDS = 90
 REFRESH_LOCK_STALE_SECONDS = 15 * 60
 DATA_LOCK = threading.Lock()
@@ -870,6 +870,40 @@ def export_funds_analysis():
     })
 
 
+@app.route('/api/market/refresh', methods=['POST'])
+def market_refresh():
+    """Return one isolated, server-calculated market snapshot for local holdings."""
+    req = request.get_json(silent=True)
+    if not isinstance(req, dict):
+        return jsonify({"success": False, "error": "请求体必须是 JSON 对象"}), 400
+
+    funds_data, error = validate_funds_data(req.get('funds'))
+    if error:
+        return jsonify({"success": False, "error": error}), 400
+
+    try:
+        from fund_refresh import refresh_funds_snapshot
+
+        refreshed_snapshot = refresh_funds_snapshot(funds_data)
+        snapshot, snapshot_error = validate_sync_snapshot(refreshed_snapshot, funds_data)
+        if snapshot_error:
+            raise ValueError(snapshot_error)
+    except Exception:
+        app.logger.exception("Market snapshot refresh failed")
+        return jsonify({"success": False, "error": "服务端行情刷新失败"}), 500
+
+    return jsonify({
+        "success": True,
+        "snapshot": snapshot,
+        "refreshed_at": utc_now_iso(),
+        "complete_count": sum(has_complete_snapshot_metrics(item) for item in snapshot),
+        "unavailable_count": sum(
+            1 for item in snapshot
+            if isinstance(item, dict) and item.get('isUnavailable')
+        ),
+    })
+
+
 @app.route('/exports/<filename>', methods=['GET'])
 def download_export(filename):
     if not re.fullmatch(r'funds-analysis-\d{8}-\d{6}-\d{6}\.csv', filename):
@@ -954,9 +988,10 @@ def sync_refresh(sync_code):
         return jsonify({"success": False, "error": "同步码无效"}), 400
 
     try:
+        force_refresh = str(request.args.get('force', '')).strip().lower() in {'1', 'true', 'yes'}
         result = refresh_sync_snapshot(
             sync_code,
-            min_interval_seconds=CLIENT_REFRESH_REUSE_SECONDS,
+            min_interval_seconds=0 if force_refresh else CLIENT_REFRESH_REUSE_SECONDS,
         )
     except TimeoutError:
         return jsonify({"success": False, "error": "云端正在刷新，请稍后重试"}), 503
