@@ -145,6 +145,44 @@
         return actualDateStr !== todayStr || nowParts.hour >= 23;
     }
 
+    function parseBrowserHistoryGlobals(source) {
+        const name = String(source && source.name || '').trim();
+        const income = source && source.millionCopiesIncome;
+        const isMoneyFund = Boolean(source && source.isMoneyFund)
+            || (Array.isArray(income) && income.length > 0);
+
+        if (isMoneyFund && Array.isArray(income) && income.length > 0) {
+            const latest = income[income.length - 1];
+            const previous = income.length > 1 ? income[income.length - 2] : latest;
+            if (!Array.isArray(latest) || !Number.isFinite(Number(latest[0]))) return null;
+            return {
+                name,
+                latest: 1,
+                prev: 1,
+                dateMs: Number(latest[0]),
+                isMoneyFund: true,
+                millionIncome: Number(latest[1]) || 0,
+                prevMillionIncome: Array.isArray(previous) ? Number(previous[1]) || 0 : 0
+            };
+        }
+
+        const trend = source && source.netWorthTrend;
+        if (!Array.isArray(trend) || trend.length === 0) return null;
+        const latest = trend[trend.length - 1];
+        const previous = trend.length > 1 ? trend[trend.length - 2] : latest;
+        const latestNav = Number(latest && latest.y);
+        const previousNav = Number(previous && previous.y);
+        const dateMs = Number(latest && latest.x);
+        if (!Number.isFinite(latestNav) || latestNav <= 0 || !Number.isFinite(dateMs)) return null;
+        return {
+            name,
+            latest: latestNav,
+            prev: Number.isFinite(previousNav) && previousNav > 0 ? previousNav : latestNav,
+            dateMs,
+            isMoneyFund: false
+        };
+    }
+
     function buildFundResult(fund, hist, rt, options = {}) {
         if (!hist && !rt) {
             return {
@@ -266,6 +304,7 @@
         buildDisplayData,
         summarizeDisplayData,
         getCurrentGroupItems,
+        parseBrowserHistoryGlobals,
         buildFundResult
     };
 });
