@@ -209,7 +209,12 @@
         const settledStatusText = isFullySettled
             ? '已完成本轮计算'
             : (resolvedCount === displayData.length ? `${unavailableCount} 项净值暂不可用` : '正在补齐净值');
-        const marketTimeText = utils.formatMarketTime(lastTime);
+        const snapshotUpdatedAt = localStorage.getItem('lastSyncCode')
+            ? localStorage.getItem('lastSyncSnapshotUpdatedAt')
+            : localStorage.getItem('lastLocalSnapshotUpdatedAt');
+        const marketTimeText = snapshotUpdatedAt
+            ? utils.formatSyncTime(snapshotUpdatedAt)
+            : utils.formatMarketTime(lastTime);
 
         return `
             <section class="page-shell page-shell-summary">
@@ -296,7 +301,7 @@
                             </div>
                             <div class="fact-item">
                                 <span class="fact-label">最近更新时间</span>
-                                <span class="fact-value">${utils.escapeHtml(utils.formatMarketTime(lastTime))}</span>
+                                <span class="fact-value">${utils.escapeHtml(marketTimeText)}</span>
                             </div>
                         </div>
                     </div>

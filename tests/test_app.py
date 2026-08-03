@@ -312,6 +312,9 @@ class FundDashboardAppTests(unittest.TestCase):
             'snapshot': [uploaded_snapshot],
         })
         self.assertEqual(save_response.status_code, 200)
+        stored = fund_app.load_data()
+        stored['159357']['snapshot_updated_at'] = '2026-08-01T09:30:00Z'
+        fund_app.save_data(stored)
 
         original_refresh = fund_refresh.refresh_funds_snapshot
         try:
@@ -332,10 +335,19 @@ class FundDashboardAppTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.get_json()
         self.assertEqual(payload['fallback_count'], 1)
+        self.assertEqual(payload['fresh_count'], 0)
+        self.assertTrue(payload['stale'])
+        self.assertFalse(payload['refreshed'])
+        self.assertTrue(payload['reused'])
+        self.assertEqual(payload['snapshot_updated_at'], '2026-08-01T09:30:00Z')
         self.assertEqual(payload['snapshot'][0]['totalAsset'], 13.1)
         self.assertEqual(payload['snapshot'][0]['dailyProfit'], 1.1)
         self.assertTrue(payload['snapshot'][0]['isRefreshFallback'])
         self.assertFalse(payload['snapshot'][0]['isUnavailable'])
+        self.assertEqual(
+            fund_app.load_data()['159357']['snapshot_updated_at'],
+            '2026-08-01T09:30:00Z',
+        )
 
     def test_browser_snapshot_publish_reuses_first_device_result(self):
         save_response = self.client.post('/api/sync/save', json={

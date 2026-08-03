@@ -17,7 +17,7 @@ USER_AGENT = "Mozilla/5.0 FundDashboard/1.0"
 EASTMONEY_HISTORY_URL = "https://fund.eastmoney.com/pingzhongdata/{code}.js?rt={timestamp}"
 EASTMONEY_LATEST_NAV_URL = (
     "https://api.fund.eastmoney.com/f10/lsjz"
-    "?fundCode={code}&pageIndex=1&pageSize=1"
+    "?fundCode={code}&pageIndex=1&pageSize={page_size}"
 )
 FUNDGZ_URL = "https://fundgz.1234567.com.cn/js/{code}.js?rt={timestamp}"
 
@@ -85,6 +85,14 @@ def date_ms_to_bj_date_str(date_ms: int | float | None) -> str:
         return ""
     dt = datetime.fromtimestamp(value / 1000, tz=timezone.utc) + timedelta(hours=8)
     return dt.strftime("%Y-%m-%d")
+
+
+def date_str_to_ms(value: Any) -> int | None:
+    try:
+        dt = datetime.strptime(str(value or "").strip(), "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+    return int(dt.timestamp() * 1000)
 
 
 def bj_now(now: datetime | None = None) -> datetime:
@@ -155,19 +163,47 @@ def fetch_history(code: str) -> dict[str, Any] | None:
     return None
 
 
-def fetch_latest_nav(code: str) -> float | None:
-    """Fetch only the latest NAV record instead of the full history script."""
-    url = EASTMONEY_LATEST_NAV_URL.format(code=code)
+def fetch_recent_history(code: str) -> dict[str, Any] | None:
+    """Fetch the two latest NAV records from the lightweight JSON endpoint."""
+    url = EASTMONEY_LATEST_NAV_URL.format(code=code, page_size=2)
     try:
         source = fetch_text(url, headers={"Referer": "https://fundf10.eastmoney.com/"})
         payload = json.loads(source)
     except (OSError, URLError, TimeoutError, json.JSONDecodeError):
         return None
 
-    records = ((payload.get("Data") or {}).get("LSJZList") or []) if isinstance(payload, dict) else []
-    if not records or not isinstance(records[0], dict):
+    data = payload.get("Data") or {} if isinstance(payload, dict) else {}
+    records = data.get("LSJZList") or [] if isinstance(data, dict) else []
+    records = [item for item in records if isinstance(item, dict)]
+    if not records:
         return None
-    nav = to_float(records[0].get("DWJZ"))
+
+    latest = records[0]
+    previous = records[1] if len(records) > 1 else latest
+    latest_value = to_float(latest.get("DWJZ"))
+    previous_value = to_float(previous.get("DWJZ"), latest_value)
+    if latest_value <= 0:
+        return None
+
+    is_money_fund = data.get("FundType") == "005" or data.get("SYType") == "每万份收益"
+    return {
+        "latest": 1.0 if is_money_fund else latest_value,
+        "prev": 1.0 if is_money_fund else previous_value,
+        "dateMs": date_str_to_ms(latest.get("FSRQ")),
+        "isMoneyFund": is_money_fund,
+        "millionIncome": latest_value if is_money_fund else 0,
+        "prevMillionIncome": previous_value if is_money_fund else 0,
+    }
+
+
+def fetch_latest_nav(code: str) -> float | None:
+    """Fetch only the latest NAV record instead of the full history script."""
+    history = fetch_recent_history(code)
+    if not history:
+        return None
+    if history.get("isMoneyFund"):
+        return 1.0
+    nav = to_float(history.get("latest"))
     return nav if nav > 0 else None
 
 
@@ -282,7 +318,7 @@ def refresh_funds_snapshot(funds: list[dict[str, Any]]) -> list[dict[str, Any] |
         if not re.fullmatch(r"\d{6}", code):
             return index, None
 
-        hist = fetch_history(code)
+        hist = fetch_recent_history(code) or fetch_history(code)
         rt = fetch_realtime_estimate(code)
         return index, build_snapshot_item(fund, hist, rt)
 

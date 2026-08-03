@@ -347,8 +347,13 @@
             const current = currentByCode.get(fund.code);
 
             if (logic.hasCompleteDisplayMetrics(incoming)) {
+                const incomingName = String(incoming.name || '').trim();
+                const currentName = String(current && current.name || '').trim();
                 return mergeSyncOverride({
                     ...incoming,
+                    name: (!incomingName || incomingName === `基金 ${fund.code}`) && currentName
+                        ? currentName
+                        : incoming.name,
                     code: fund.code,
                     group: fund.group || incoming.group || '默认分组'
                 });
@@ -425,10 +430,22 @@
                 const snapshotTime = payload.snapshot_updated_at
                     ? `，快照时间 ${utils.formatSyncTime(payload.snapshot_updated_at)}`
                     : '';
-                const message = payload.reused
-                    ? `已读取统一云端快照${snapshotTime}`
-                    : `已完成 ${countCompleteSnapshots(payload.snapshot)}/${state.myFunds.length} 项净值计算${snapshotTime}`;
-                app.ui.showNotice(message, 'success', 5000);
+                const fallbackCount = Number(payload.fallback_count) || 0;
+                if (payload.stale) {
+                    app.ui.showNotice(`行情源暂不可用，已保留上一次完整结果${snapshotTime}`, 'error', 6000);
+                } else if (fallbackCount > 0) {
+                    app.ui.showNotice(
+                        `已更新 ${Number(payload.fresh_count) || 0}/${state.myFunds.length} 项，${fallbackCount} 项保留旧值${snapshotTime}`,
+                        'error',
+                        6000
+                    );
+                } else {
+                    app.ui.showNotice(
+                        `已完成 ${countCompleteSnapshots(payload.snapshot)}/${state.myFunds.length} 项净值计算${snapshotTime}`,
+                        'success',
+                        5000
+                    );
+                }
             }
         } catch (error) {
             console.error('refreshCloudSnapshot failed', error);
@@ -473,6 +490,9 @@
             }
 
             bar.style.width = '85%';
+            if (payload.refreshed_at) {
+                localStorage.setItem('lastLocalSnapshotUpdatedAt', payload.refreshed_at);
+            }
             applyResults(mergeMarketSnapshot(payload.snapshot));
             bar.style.width = '100%';
         } catch (error) {

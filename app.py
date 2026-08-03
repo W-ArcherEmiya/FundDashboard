@@ -337,14 +337,20 @@ def merge_snapshot_refresh(funds_data, previous_snapshot, refreshed_snapshot):
     fallback_count = 0
     for index, fund in enumerate(funds_data):
         code = fund['code']
+        direct_previous = previous_snapshot[index] if index < len(previous_snapshot or []) else None
+        previous = direct_previous if isinstance(direct_previous, dict) and direct_previous.get('code') == code else previous_by_code.get(code)
         direct_refreshed = refreshed_snapshot[index] if index < len(refreshed_snapshot or []) else None
         fresh = direct_refreshed if isinstance(direct_refreshed, dict) and direct_refreshed.get('code') == code else refreshed_by_code.get(code)
         if has_complete_snapshot_metrics(fresh):
+            if (
+                isinstance(previous, dict)
+                and str(fresh.get('name') or '').strip() in {'', f'基金 {code}'}
+                and str(previous.get('name') or '').strip()
+            ):
+                fresh = {**fresh, 'name': previous['name']}
             merged.append(fresh)
             continue
 
-        direct_previous = previous_snapshot[index] if index < len(previous_snapshot or []) else None
-        previous = direct_previous if isinstance(direct_previous, dict) and direct_previous.get('code') == code else previous_by_code.get(code)
         if has_complete_snapshot_metrics(previous):
             merged.append({
                 **previous,
@@ -443,6 +449,7 @@ def refresh_sync_snapshot(sync_code, min_interval_seconds=0, dry_run=False):
             normalized_snapshot, snapshot_error = validate_sync_snapshot(refreshed_snapshot, funds_data)
             if snapshot_error:
                 raise ValueError(snapshot_error)
+            fresh_complete_count = sum(has_complete_snapshot_metrics(item) for item in normalized_snapshot)
             normalized_snapshot, fallback_count = merge_snapshot_refresh(
                 funds_data,
                 snapshot,
@@ -450,26 +457,30 @@ def refresh_sync_snapshot(sync_code, min_interval_seconds=0, dry_run=False):
             )
 
             refreshed_at = utc_now_iso()
+            all_fallback = fresh_complete_count == 0 and fallback_count > 0
+            effective_refreshed_at = snapshot_updated_at if all_fallback else refreshed_at
             if not dry_run:
                 normalized_entry = dict(entry) if isinstance(entry, dict) else {}
                 normalized_entry.update({
                     "data": funds_data,
                     "snapshot": normalized_snapshot,
                     "updated_at": updated_at or refreshed_at,
-                    "snapshot_updated_at": refreshed_at,
-                    "auto_refreshed_at": refreshed_at,
+                    "snapshot_updated_at": effective_refreshed_at,
+                    "auto_refreshed_at": effective_refreshed_at,
                 })
                 db[sync_code] = normalized_entry
                 save_data(db)
 
             return {
                 "found": True,
-                "refreshed": True,
-                "reused": False,
+                "refreshed": not all_fallback,
+                "reused": all_fallback,
+                "stale": all_fallback,
                 "data": funds_data,
                 "snapshot": normalized_snapshot,
                 "updated_at": updated_at or refreshed_at,
-                "snapshot_updated_at": refreshed_at,
+                "snapshot_updated_at": effective_refreshed_at,
+                "fresh_count": fresh_complete_count,
                 "fallback_count": fallback_count,
             }
 

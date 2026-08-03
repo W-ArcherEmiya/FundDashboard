@@ -37,6 +37,40 @@ class FundRefreshTests(unittest.TestCase):
 
         self.assertEqual(nav, 1.0918)
 
+    def test_fetch_recent_history_parses_two_nav_records(self):
+        original_fetch_text = fund_refresh.fetch_text
+        try:
+            fund_refresh.fetch_text = lambda *_args, **_kwargs: (
+                '{"Data":{"FundType":"003","LSJZList":['
+                '{"FSRQ":"2026-08-03","DWJZ":"1.0919"},'
+                '{"FSRQ":"2026-07-31","DWJZ":"1.0918"}]}}'
+            )
+            history = fund_refresh.fetch_recent_history('016663')
+        finally:
+            fund_refresh.fetch_text = original_fetch_text
+
+        self.assertEqual(history['latest'], 1.0919)
+        self.assertEqual(history['prev'], 1.0918)
+        self.assertEqual(fund_refresh.date_ms_to_bj_date_str(history['dateMs']), '2026-08-03')
+        self.assertFalse(history['isMoneyFund'])
+
+    def test_fetch_recent_history_handles_money_fund_income(self):
+        original_fetch_text = fund_refresh.fetch_text
+        try:
+            fund_refresh.fetch_text = lambda *_args, **_kwargs: (
+                '{"Data":{"FundType":"005","SYType":"每万份收益","LSJZList":['
+                '{"FSRQ":"2026-08-03","DWJZ":"0.4438"},'
+                '{"FSRQ":"2026-08-02","DWJZ":"0.5892"}]}}'
+            )
+            history = fund_refresh.fetch_recent_history('018092')
+        finally:
+            fund_refresh.fetch_text = original_fetch_text
+
+        self.assertTrue(history['isMoneyFund'])
+        self.assertEqual(history['latest'], 1.0)
+        self.assertEqual(history['millionIncome'], 0.4438)
+        self.assertEqual(history['prevMillionIncome'], 0.5892)
+
     def test_build_snapshot_item_uses_realtime_when_newer_than_history(self):
         item = build_snapshot_item(
             {'code': '000001', 'shares': '10', 'cost': '1.2', 'group': '稳健'},
