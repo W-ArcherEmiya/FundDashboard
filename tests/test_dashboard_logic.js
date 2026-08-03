@@ -101,6 +101,40 @@ runTest('summarizeDisplayData aggregates totals and group profit', () => {
     assert.deepEqual(summary.groupStats, { '稳健': 12, '高风险': -2 });
 });
 
+runTest('parseBrowserHistoryGlobals extracts regular NAV history', () => {
+    const result = logic.parseBrowserHistoryGlobals({
+        name: '测试债券C',
+        isMoneyFund: false,
+        netWorthTrend: [
+            { x: 1785427200000, y: 1.0918 },
+            { x: 1785686400000, y: 1.0919 }
+        ]
+    });
+
+    assert.equal(result.name, '测试债券C');
+    assert.equal(result.latest, 1.0919);
+    assert.equal(result.prev, 1.0918);
+    assert.equal(result.dateMs, 1785686400000);
+    assert.equal(result.isMoneyFund, false);
+});
+
+runTest('parseBrowserHistoryGlobals extracts money fund income', () => {
+    const result = logic.parseBrowserHistoryGlobals({
+        name: '现金添利C',
+        isMoneyFund: true,
+        millionCopiesIncome: [
+            [1785600000000, 0.5892],
+            [1785686400000, 0.4438]
+        ]
+    });
+
+    assert.equal(result.latest, 1);
+    assert.equal(result.prev, 1);
+    assert.equal(result.millionIncome, 0.4438);
+    assert.equal(result.prevMillionIncome, 0.5892);
+    assert.equal(result.isMoneyFund, true);
+});
+
 runTest('buildFundResult prefers realtime estimate during daytime session', () => {
     const result = logic.buildFundResult(
         { code: '000001', shares: '10', cost: '1.2', group: '稳健' },

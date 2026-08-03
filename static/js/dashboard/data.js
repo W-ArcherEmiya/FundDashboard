@@ -2,6 +2,8 @@
     const app = window.FundDashboard = window.FundDashboard || {};
     const { state, utils, logic } = app;
     const UPLOAD_REFRESH_WAIT_MS = 45 * 1000;
+    const BROWSER_HISTORY_TIMEOUT_MS = 10 * 1000;
+    const BROWSER_REFRESH_WORKERS = 6;
     const SYNC_OVERRIDE_FIELDS = ['estRate', 'estNav', 'dailyProfit', 'totalAsset', 'holdProfit'];
 
     function mergeSyncOverride(result) {
@@ -373,6 +375,95 @@
         });
     }
 
+    function fetchBrowserHistory(code, timeoutMs = BROWSER_HISTORY_TIMEOUT_MS) {
+        return new Promise(resolve => {
+            const frame = document.createElement('iframe');
+            frame.hidden = true;
+            frame.setAttribute('aria-hidden', 'true');
+            document.body.appendChild(frame);
+
+            let finished = false;
+            let timerId = null;
+            const finish = value => {
+                if (finished) return;
+                finished = true;
+                if (timerId) clearTimeout(timerId);
+                frame.remove();
+                resolve(value);
+            };
+
+            try {
+                const frameWindow = frame.contentWindow;
+                const script = frame.contentDocument.createElement('script');
+                script.async = true;
+                script.src = `https://fund.eastmoney.com/pingzhongdata/${code}.js?rt=${Date.now()}`;
+                script.onload = () => finish(logic.parseBrowserHistoryGlobals({
+                    name: frameWindow.fS_name,
+                    isMoneyFund: frameWindow.ishb,
+                    netWorthTrend: frameWindow.Data_netWorthTrend,
+                    millionCopiesIncome: frameWindow.Data_millionCopiesIncome
+                }));
+                script.onerror = () => finish(null);
+                timerId = setTimeout(() => finish(null), timeoutMs);
+                frame.contentDocument.head.appendChild(script);
+            } catch (error) {
+                console.warn(`browser history lookup failed for ${code}`, error);
+                finish(null);
+            }
+        });
+    }
+
+    async function mapWithConcurrency(items, worker, concurrency) {
+        const results = new Array(items.length);
+        let cursor = 0;
+        const run = async () => {
+            while (cursor < items.length) {
+                const index = cursor++;
+                results[index] = await worker(items[index], index);
+            }
+        };
+        const workers = Array.from(
+            { length: Math.max(1, Math.min(concurrency, items.length)) },
+            () => run()
+        );
+        await Promise.all(workers);
+        return results;
+    }
+
+    async function refreshBrowserSnapshot(syncCode) {
+        const snapshot = await mapWithConcurrency(
+            state.myFunds,
+            async fund => {
+                const history = await fetchBrowserHistory(fund.code);
+                return history ? logic.buildFundResult(fund, history, null) : null;
+            },
+            BROWSER_REFRESH_WORKERS
+        );
+        const freshCount = countCompleteSnapshots(snapshot);
+        if (freshCount === 0) return null;
+
+        const mergedSnapshot = mergeMarketSnapshot(snapshot);
+        const response = await fetch('/api/sync/publish/' + encodeURIComponent(syncCode), {
+            method: 'POST',
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ snapshot: mergedSnapshot })
+        });
+        const payload = await response.json();
+        if (!response.ok || !payload.success) {
+            throw new Error(payload.error || '浏览器行情快照发布失败');
+        }
+        return {
+            ...payload,
+            browserFallback: true,
+            stale: false,
+            fresh_count: freshCount,
+            fallback_count: state.myFunds.length - freshCount
+        };
+    }
+
     async function refreshCloudSnapshot(syncCode, options = {}) {
         const { allowQueue = true, forceHist = false } = options;
         if (state.refreshInFlight) {
@@ -393,9 +484,15 @@
                 method: 'POST',
                 headers: { 'Accept': 'application/json' }
             });
-            const payload = await response.json();
+            let payload = await response.json();
             if (!response.ok || !payload.success) {
                 throw new Error(payload.error || '云端净值刷新失败');
+            }
+
+            if (payload.stale) {
+                bar.style.width = '35%';
+                const browserPayload = await refreshBrowserSnapshot(syncCode);
+                if (browserPayload) payload = browserPayload;
             }
 
             bar.style.width = '80%';
@@ -440,8 +537,9 @@
                         6000
                     );
                 } else {
+                    const sourceText = payload.browserFallback ? '（当前设备行情）' : '';
                     app.ui.showNotice(
-                        `已完成 ${countCompleteSnapshots(payload.snapshot)}/${state.myFunds.length} 项净值计算${snapshotTime}`,
+                        `已完成 ${countCompleteSnapshots(payload.snapshot)}/${state.myFunds.length} 项净值计算${sourceText}${snapshotTime}`,
                         'success',
                         5000
                     );
