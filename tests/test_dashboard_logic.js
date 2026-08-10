@@ -59,6 +59,49 @@ runTest('evaluateExistingShareCalibration corrects shares when screenshot daily 
     assertAlmostEqual(result.expectedDailyProfit, 71.675, 0.01);
 });
 
+runTest('evaluateExistingShareCalibration uses cost basis when screenshot daily profit is missing', () => {
+    const result = logic.evaluateExistingShareCalibration({
+        existingShares: 1000,
+        existingCost: 1.2,
+        proposedShares: 900,
+        screenshotAmount: 1350,
+        screenshotHoldProfit: 150,
+        screenshotDailyProfit: '',
+        marketDailyProfit: 12
+    });
+
+    assert.equal(result.status, 'calibrated');
+    assert.equal(result.requiresReview, false);
+    assert.equal(result.shares, 900);
+    assert.equal(result.validationSource, 'cost-basis');
+    assert.equal(result.existingCostBasis, 1200);
+    assert.equal(result.screenshotCostBasis, 1200);
+});
+
+runTest('cost basis fallback calibrates the reported existing holdings', () => {
+    const cases = [
+        { code: '016186', existingShares: 242.42, existingCost: 1.0230, amount: 268.07, holdProfit: 20.07, proposedShares: 241.85 },
+        { code: '018957', existingShares: 240.68, existingCost: 2.9084, amount: 1017.35, holdProfit: 317.35, proposedShares: 229.79 },
+        { code: '021533', existingShares: 175.40, existingCost: 1.7104, amount: 594.49, holdProfit: 294.49, proposedShares: 171.50 },
+        { code: '001593', existingShares: 544.43, existingCost: 1.1622, amount: 740.46, holdProfit: 107.70, proposedShares: 529.20 }
+    ];
+
+    cases.forEach(item => {
+        const result = logic.evaluateExistingShareCalibration({
+            existingShares: item.existingShares,
+            existingCost: item.existingCost,
+            proposedShares: item.proposedShares,
+            screenshotAmount: item.amount,
+            screenshotHoldProfit: item.holdProfit,
+            screenshotDailyProfit: ''
+        });
+
+        assert.equal(result.status, 'calibrated', `${item.code} should calibrate`);
+        assert.equal(result.validationSource, 'cost-basis');
+        assert.equal(result.shares, item.proposedShares);
+    });
+});
+
 runTest('evaluateExistingShareCalibration preserves shares when daily profit disagrees', () => {
     const result = logic.evaluateExistingShareCalibration({
         existingShares: 1335.78,
@@ -73,7 +116,7 @@ runTest('evaluateExistingShareCalibration preserves shares when daily profit dis
     assert.equal(result.reason, 'daily-profit-mismatch');
 });
 
-runTest('evaluateExistingShareCalibration requires review when daily profit is unavailable', () => {
+runTest('evaluateExistingShareCalibration requires review when both validation sources are unavailable', () => {
     const result = logic.evaluateExistingShareCalibration({
         existingShares: 1000,
         proposedShares: 900,
@@ -84,7 +127,24 @@ runTest('evaluateExistingShareCalibration requires review when daily profit is u
     assert.equal(result.status, 'review');
     assert.equal(result.requiresReview, true);
     assert.equal(result.shares, 1000);
-    assert.equal(result.reason, 'missing-daily-profit');
+    assert.equal(result.reason, 'missing-validation-data');
+});
+
+runTest('evaluateExistingShareCalibration preserves shares when cost basis changed', () => {
+    const result = logic.evaluateExistingShareCalibration({
+        existingShares: 1000,
+        existingCost: 1.2,
+        proposedShares: 900,
+        screenshotAmount: 1400,
+        screenshotHoldProfit: 100,
+        screenshotDailyProfit: '',
+        marketDailyProfit: 12
+    });
+
+    assert.equal(result.status, 'review');
+    assert.equal(result.requiresReview, true);
+    assert.equal(result.shares, 1000);
+    assert.equal(result.reason, 'cost-basis-mismatch');
 });
 
 runTest('evaluateExistingShareCalibration keeps nearly identical existing shares', () => {

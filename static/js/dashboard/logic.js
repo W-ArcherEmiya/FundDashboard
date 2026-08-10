@@ -26,7 +26,10 @@
 
     function evaluateExistingShareCalibration(input = {}) {
         const existingShares = parseRequiredNumber(input.existingShares);
+        const existingCost = parseRequiredNumber(input.existingCost);
         const proposedShares = parseRequiredNumber(input.proposedShares);
+        const screenshotAmount = parseRequiredNumber(input.screenshotAmount);
+        const screenshotHoldProfit = parseRequiredNumber(input.screenshotHoldProfit);
         const screenshotDailyProfit = parseRequiredNumber(input.screenshotDailyProfit);
         const marketDailyProfit = parseRequiredNumber(input.marketDailyProfit);
 
@@ -55,18 +58,38 @@
             };
         }
 
-        if (!Number.isFinite(screenshotDailyProfit) || !Number.isFinite(marketDailyProfit)) {
-            return review('missing-daily-profit');
-        }
-
-        const expectedDailyProfit = marketDailyProfit * proposedShares / existingShares;
-        const dailyDifference = Math.abs(expectedDailyProfit - screenshotDailyProfit);
-        const dailyTolerance = Math.max(0.03, Math.abs(screenshotDailyProfit) * 0.015);
-        const signMatches = Math.abs(screenshotDailyProfit) <= dailyTolerance
+        const hasDailyCheck = Number.isFinite(screenshotDailyProfit) && Number.isFinite(marketDailyProfit);
+        const expectedDailyProfit = hasDailyCheck
+            ? marketDailyProfit * proposedShares / existingShares
+            : NaN;
+        const dailyDifference = hasDailyCheck
+            ? Math.abs(expectedDailyProfit - screenshotDailyProfit)
+            : NaN;
+        const dailyTolerance = hasDailyCheck
+            ? Math.max(0.03, Math.abs(screenshotDailyProfit) * 0.015)
+            : NaN;
+        const dailySignMatches = hasDailyCheck && (
+            Math.abs(screenshotDailyProfit) <= dailyTolerance
             || Math.abs(expectedDailyProfit) <= dailyTolerance
-            || Math.sign(expectedDailyProfit) === Math.sign(screenshotDailyProfit);
+            || Math.sign(expectedDailyProfit) === Math.sign(screenshotDailyProfit)
+        );
+        const dailyMatches = hasDailyCheck && dailySignMatches && dailyDifference <= dailyTolerance;
 
-        if (signMatches && dailyDifference <= dailyTolerance) {
+        const hasCostBasisCheck = Number.isFinite(existingCost) && existingCost >= 0
+            && Number.isFinite(screenshotAmount) && Number.isFinite(screenshotHoldProfit);
+        const existingCostBasis = hasCostBasisCheck ? existingShares * existingCost : NaN;
+        const screenshotCostBasis = hasCostBasisCheck ? screenshotAmount - screenshotHoldProfit : NaN;
+        const costBasisDifference = hasCostBasisCheck
+            ? Math.abs(existingCostBasis - screenshotCostBasis)
+            : NaN;
+        const costBasisTolerance = hasCostBasisCheck
+            ? Math.max(0.1, Math.abs(screenshotCostBasis) * 0.002)
+            : NaN;
+        const costBasisMatches = hasCostBasisCheck
+            && screenshotCostBasis >= 0
+            && costBasisDifference <= costBasisTolerance;
+
+        if (dailyMatches || costBasisMatches) {
             return {
                 status: 'calibrated',
                 shares: proposedShares,
@@ -75,17 +98,31 @@
                 expectedDailyProfit,
                 dailyDifference,
                 dailyTolerance,
+                existingCostBasis,
+                screenshotCostBasis,
+                costBasisDifference,
+                costBasisTolerance,
+                validationSource: dailyMatches && costBasisMatches
+                    ? 'daily-profit-and-cost-basis'
+                    : (dailyMatches ? 'daily-profit' : 'cost-basis'),
                 shareDeltaRatio,
                 requiresReview: false,
                 reason: ''
             };
         }
 
+        const reason = !hasDailyCheck && !hasCostBasisCheck
+            ? 'missing-validation-data'
+            : (hasCostBasisCheck && !costBasisMatches ? 'cost-basis-mismatch' : 'daily-profit-mismatch');
         return {
-            ...review('daily-profit-mismatch'),
+            ...review(reason),
             expectedDailyProfit,
             dailyDifference,
             dailyTolerance,
+            existingCostBasis,
+            screenshotCostBasis,
+            costBasisDifference,
+            costBasisTolerance,
             shareDeltaRatio
         };
     }
