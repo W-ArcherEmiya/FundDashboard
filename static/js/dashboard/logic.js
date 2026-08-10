@@ -166,6 +166,43 @@
         return { apply: true, reason: '' };
     }
 
+    function mergeHoldingSnapshotOverrides(funds, cachedResults, overrides) {
+        const cachedByCode = new Map();
+        (cachedResults || []).forEach(item => {
+            if (item && item.code) cachedByCode.set(item.code, item);
+        });
+
+        const overrideFields = ['estRate', 'estNav', 'dailyProfit', 'totalAsset', 'holdProfit'];
+        return (funds || []).map((fund, index) => {
+            const direct = (cachedResults || [])[index];
+            const cached = direct && direct.code === fund.code ? direct : cachedByCode.get(fund.code);
+            const override = overrides && overrides[fund.code];
+            if (!cached && !override) return null;
+
+            const result = {
+                ...(cached || {
+                    name: `基金 ${fund.code}`,
+                    gztime: '截图快照',
+                    valid: true,
+                    isActual: true,
+                    isBackup: true,
+                    dailyProfit: 0
+                }),
+                code: fund.code,
+                group: fund.group || '默认分组'
+            };
+
+            if (override) {
+                result.hasSyncOverride = true;
+                overrideFields.forEach(field => {
+                    const value = Number(override[field]);
+                    if (Number.isFinite(value)) result[field] = value;
+                });
+            }
+            return result;
+        });
+    }
+
     function normalizeActiveTab(activeTabId, groups) {
         if (activeTabId === 'tab-summary') {
             return { activeTabId: 'tab-summary', currentActiveGroup: null };
@@ -409,6 +446,7 @@
         evaluateExistingShareCalibration,
         hasCompleteDisplayMetrics,
         getCloudSnapshotApplyDecision,
+        mergeHoldingSnapshotOverrides,
         normalizeActiveTab,
         buildDisplayData,
         summarizeDisplayData,

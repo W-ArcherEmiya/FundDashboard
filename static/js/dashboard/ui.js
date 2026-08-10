@@ -1783,7 +1783,8 @@
         state.importEditingIndex = null;
         if (updated > 0) state.importAutoUpdatedCount = (state.importAutoUpdatedCount || 0) + updated;
         app.persistFunds();
-        renderUI(true);
+        const hasImmediateSnapshot = app.data.applyLocalSnapshotOverrides();
+        renderUI(!hasImmediateSnapshot);
         app.data.refreshNetworkData();
         renderImportResults(state.importCandidates);
 
