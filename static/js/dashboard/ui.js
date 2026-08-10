@@ -695,11 +695,56 @@
         return (totalCost / sharesValue).toFixed(4);
     }
 
-    function getCachedImportNav(code) {
+    function getCachedImportResult(code) {
         const fundIndex = state.myFunds.findIndex(fund => fund.code === code);
-        if (fundIndex < 0) return null;
-        const nav = Number(state.cachedResults[fundIndex]?.estNav);
+        return fundIndex >= 0 ? (state.cachedResults[fundIndex] || null) : null;
+    }
+
+    function getCachedImportNav(code) {
+        const nav = Number(getCachedImportResult(code)?.estNav);
         return Number.isFinite(nav) && nav > 0 ? nav : null;
+    }
+
+    function applyInferredImportPosition(candidate, inferred) {
+        if (!candidate || !inferred) return false;
+
+        const existingFund = getExistingFundByCode(candidate.code);
+        candidate.nav = inferred.nav;
+        candidate.suggestedShares = inferred.shares;
+
+        if (!existingFund) {
+            candidate.shares = inferred.shares;
+            candidate.cost = inferCostFromProfit(candidate.amount, candidate.holdProfit, candidate.shares);
+            candidate.requiresShareReview = false;
+            candidate.shareCalibrationStatus = 'new';
+            return true;
+        }
+
+        const cachedResult = getCachedImportResult(candidate.code);
+        const calibration = app.logic.evaluateExistingShareCalibration({
+            existingShares: existingFund.shares,
+            proposedShares: inferred.shares,
+            screenshotDailyProfit: candidate.dailyProfit,
+            marketDailyProfit: cachedResult && cachedResult.dailyProfit
+        });
+
+        candidate.existing = true;
+        candidate.existingShares = String(existingFund.shares || '');
+        candidate.previousShares = calibration.previousShares;
+        candidate.shareCalibrationStatus = calibration.status;
+        candidate.shareCalibrationReason = calibration.reason;
+        candidate.requiresShareReview = calibration.requiresReview;
+
+        if (calibration.requiresReview) {
+            candidate.shares = String(existingFund.shares || '');
+            candidate.cost = String(existingFund.cost || '');
+            return false;
+        }
+
+        candidate.shares = Number(calibration.shares).toFixed(2);
+        candidate.cost = inferCostFromProfit(candidate.amount, candidate.holdProfit, candidate.shares)
+            || String(existingFund.cost || '');
+        return true;
     }
 
     function storeCandidateSnapshotOverride(code, candidate) {
@@ -755,12 +800,15 @@
         if (index === -1) return false;
         const group = String(candidate.group || '').trim() || state.myFunds[index].group || '默认分组';
 
-        state.myFunds[index] = {
+        const updatedFund = {
             ...state.myFunds[index],
-            shares: candidate.shares,
-            cost: candidate.cost !== '' ? candidate.cost : state.myFunds[index].cost,
             group
         };
+        if (!candidate.requiresShareReview) {
+            updatedFund.shares = candidate.shares;
+            updatedFund.cost = candidate.cost !== '' ? candidate.cost : state.myFunds[index].cost;
+        }
+        state.myFunds[index] = updatedFund;
         return true;
     }
 
@@ -786,9 +834,16 @@
     function buildImportRow(candidate, index) {
         const hasCode = /^\d{6}$/.test(candidate.code || '');
         const hasSuggestions = Array.isArray(candidate.suggestions) && candidate.suggestions.length > 0 && !hasCode;
-        const disabledNote = candidate.shares
-            ? ''
-            : `<div class="import-row-warning">${hasCode ? '未能反推份额，请检查代码或手动填写。' : (hasSuggestions ? '存在多个相似候选，请选择正确基金。' : '无法匹配基金代码，请输入代码后重新计算份额和成本。')}</div>`;
+        const shareReviewText = candidate.shareCalibrationReason === 'missing-daily-profit'
+            ? '缺少可交叉校验的昨日收益，已保留原份额，请打开确认。'
+            : (candidate.shareCalibrationReason === 'missing-nav'
+                ? '未取得可用于校验的净值，已保留原份额，请打开确认。'
+                : '截图金额与昨日收益校验不一致，已保留原份额，请打开确认。');
+        const disabledNote = candidate.requiresShareReview
+            ? `<div class="import-row-warning">${shareReviewText}</div>`
+            : (candidate.shares
+                ? ''
+                : `<div class="import-row-warning">${hasCode ? '未能反推份额，请检查代码或手动填写。' : (hasSuggestions ? '存在多个相似候选，请选择正确基金。' : '无法匹配基金代码，请输入代码后重新计算份额和成本。')}</div>`);
         const matchStatus = hasCode ? utils.escapeHtml(candidate.code) : (hasSuggestions ? '待选择候选' : '无法匹配');
         const amountText = candidate.amount ? utils.escapeHtml(candidate.amount) : '--';
         const holdProfitText = candidate.holdProfit ? utils.escapeHtml(candidate.holdProfit) : '--';
@@ -1135,6 +1190,7 @@
                 fieldSources: candidate.fieldSources || {},
                 unmatched: Boolean(candidate.unmatched || !candidate.code),
                 existing: Boolean(existingFund),
+                existingShares: existingFund ? String(existingFund.shares || '') : '',
                 group: existingFund ? (existingFund.group || '默认分组') : getDefaultImportGroup(),
                 shares: candidate.shares || '',
                 cost: candidate.cost || '',
@@ -1156,18 +1212,28 @@
                 setImportProgress(85 + Math.round(((index + 1) / uniqueCandidates.length) * 12));
             }
             if (candidate.code && !candidate.shares) {
+                const preferredNav = candidate.existing
+                    ? (getCachedImportNav(candidate.code) || navByCode[candidate.code])
+                    : (navByCode[candidate.code] || getCachedImportNav(candidate.code));
                 const inferred = await fillSharesFromAmount(
                     candidate.code,
                     candidate.amount,
-                    navByCode[candidate.code] || getCachedImportNav(candidate.code)
+                    preferredNav
                 );
                 if (inferred) {
-                    candidate.shares = inferred.shares;
-                    candidate.nav = inferred.nav;
-                    candidate.cost = inferCostFromProfit(candidate.amount, candidate.holdProfit, candidate.shares);
+                    applyInferredImportPosition(candidate, inferred);
+                } else if (candidate.existing) {
+                    const existingFund = getExistingFundByCode(candidate.code);
+                    candidate.shares = String(existingFund?.shares || '');
+                    candidate.cost = String(existingFund?.cost || '');
+                    candidate.shareCalibrationStatus = 'review';
+                    candidate.shareCalibrationReason = 'missing-nav';
+                    candidate.requiresShareReview = true;
                 }
             } else if (candidate.shares && !candidate.cost) {
                 candidate.cost = inferCostFromProfit(candidate.amount, candidate.holdProfit, candidate.shares);
+                candidate.shareCalibrationStatus = candidate.existing ? 'explicit' : 'new';
+                candidate.requiresShareReview = false;
             }
         }
 
@@ -1492,6 +1558,11 @@
 
     function saveImportEdit() {
         syncImportRowsToState();
+        const candidate = state.importCandidates[state.importEditingIndex];
+        if (candidate && Number(candidate.shares) > 0) {
+            candidate.requiresShareReview = false;
+            candidate.shareCalibrationStatus = 'manual';
+        }
         state.importEditingIndex = null;
         renderImportResults(state.importCandidates);
     }
@@ -1549,16 +1620,22 @@
         const status = document.getElementById('importStatus');
         if (status) status.textContent = `正在用 ${candidate.code} 重新计算份额和成本`;
 
-        const inferred = await fillSharesFromAmount(candidate.code, candidate.amount);
+        const preferredNav = existingFund
+            ? getCachedImportNav(candidate.code)
+            : null;
+        const inferred = await fillSharesFromAmount(candidate.code, candidate.amount, preferredNav);
         if (inferred) {
-            candidate.shares = inferred.shares;
-            candidate.nav = inferred.nav;
-            candidate.cost = inferCostFromProfit(candidate.amount, candidate.holdProfit, candidate.shares);
+            applyInferredImportPosition(candidate, inferred);
         }
 
         renderImportResults(state.importCandidates);
-        if (status) status.textContent = '已选择候选基金';
-        showNotice('已选择候选基金并重新计算', 'success', 3500);
+        const needsReview = Boolean(candidate.requiresShareReview);
+        if (status) status.textContent = needsReview ? '已匹配基金代码，份额待确认' : '已选择候选基金';
+        showNotice(
+            needsReview ? '已匹配基金代码；份额校验未通过，已保留原数据' : '已选择候选基金并重新计算',
+            needsReview ? 'info' : 'success',
+            3500
+        );
     }
 
     async function recalculateImportCandidate(index) {
@@ -1578,6 +1655,8 @@
             }
 
             updateImportEditPreview();
+            candidate.requiresShareReview = false;
+            candidate.shareCalibrationStatus = 'manual';
             showNotice('已更新持仓成本估算', 'success', 3000);
             return;
         }
@@ -1596,7 +1675,12 @@
         const status = document.getElementById('importStatus');
         if (status) status.textContent = `正在用 ${code} 重新计算份额和成本`;
 
-        const inferred = await fillSharesFromAmount(code, candidate.amount);
+        const existingFund = getExistingFundByCode(code);
+        const inferred = await fillSharesFromAmount(
+            code,
+            candidate.amount,
+            existingFund ? getCachedImportNav(code) : null
+        );
         if (!inferred) {
             showNotice('未能拉取该基金净值，请检查代码是否正确', 'error', 5000);
             return;
@@ -1605,17 +1689,25 @@
         candidate.code = code;
         candidate.unmatched = false;
         candidate.source = 'manualCode';
-        candidate.shares = inferred.shares;
-        candidate.nav = inferred.nav;
-        candidate.cost = inferCostFromProfit(candidate.amount, candidate.holdProfit, candidate.shares);
         candidate.selected = true;
-        const existingFund = getExistingFundByCode(code);
         candidate.existing = Boolean(existingFund);
         if (existingFund) candidate.group = existingFund.group || '默认分组';
+        applyInferredImportPosition(candidate, inferred);
 
         renderImportResults(state.importCandidates);
-        if (status) status.textContent = existingFund ? '已重新计算份额和成本，并填入已有分组' : '已重新计算份额和成本';
-        showNotice(existingFund ? '已重新计算，并填入已有分组' : '已重新计算该基金的份额和成本', 'success', 4000);
+        const needsReview = Boolean(candidate.requiresShareReview);
+        if (status) {
+            status.textContent = needsReview
+                ? '份额校验未通过，已保留原数据'
+                : (existingFund ? '已重新计算份额和成本，并填入已有分组' : '已重新计算份额和成本');
+        }
+        showNotice(
+            needsReview
+                ? '份额校验未通过，已保留原份额和成本，请手动确认'
+                : (existingFund ? '已重新计算，并填入已有分组' : '已重新计算该基金的份额和成本'),
+            needsReview ? 'info' : 'success',
+            4000
+        );
     }
 
     function addImportSelected() {

@@ -15,8 +15,79 @@
     function getImportCandidateReviewRank(candidate) {
         const hasCode = /^\d{6}$/.test(String(candidate && candidate.code || ''));
         if (!hasCode || candidate.unmatched) return 0;
-        if (!candidate.shares) return 1;
+        if (!candidate.shares || candidate.requiresShareReview) return 1;
         return 2;
+    }
+
+    function parseRequiredNumber(value) {
+        if (value === '' || value === null || value === undefined) return NaN;
+        return Number(value);
+    }
+
+    function evaluateExistingShareCalibration(input = {}) {
+        const existingShares = parseRequiredNumber(input.existingShares);
+        const proposedShares = parseRequiredNumber(input.proposedShares);
+        const screenshotDailyProfit = parseRequiredNumber(input.screenshotDailyProfit);
+        const marketDailyProfit = parseRequiredNumber(input.marketDailyProfit);
+
+        const review = reason => ({
+            status: 'review',
+            shares: existingShares,
+            previousShares: existingShares,
+            proposedShares,
+            requiresReview: true,
+            reason
+        });
+
+        if (!Number.isFinite(existingShares) || existingShares <= 0) return review('invalid-existing-shares');
+        if (!Number.isFinite(proposedShares) || proposedShares <= 0) return review('invalid-proposed-shares');
+
+        const shareDeltaRatio = Math.abs(proposedShares - existingShares) / existingShares;
+        if (shareDeltaRatio <= 0.0015) {
+            return {
+                status: 'aligned',
+                shares: existingShares,
+                previousShares: existingShares,
+                proposedShares,
+                shareDeltaRatio,
+                requiresReview: false,
+                reason: ''
+            };
+        }
+
+        if (!Number.isFinite(screenshotDailyProfit) || !Number.isFinite(marketDailyProfit)) {
+            return review('missing-daily-profit');
+        }
+
+        const expectedDailyProfit = marketDailyProfit * proposedShares / existingShares;
+        const dailyDifference = Math.abs(expectedDailyProfit - screenshotDailyProfit);
+        const dailyTolerance = Math.max(0.03, Math.abs(screenshotDailyProfit) * 0.015);
+        const signMatches = Math.abs(screenshotDailyProfit) <= dailyTolerance
+            || Math.abs(expectedDailyProfit) <= dailyTolerance
+            || Math.sign(expectedDailyProfit) === Math.sign(screenshotDailyProfit);
+
+        if (signMatches && dailyDifference <= dailyTolerance) {
+            return {
+                status: 'calibrated',
+                shares: proposedShares,
+                previousShares: existingShares,
+                proposedShares,
+                expectedDailyProfit,
+                dailyDifference,
+                dailyTolerance,
+                shareDeltaRatio,
+                requiresReview: false,
+                reason: ''
+            };
+        }
+
+        return {
+            ...review('daily-profit-mismatch'),
+            expectedDailyProfit,
+            dailyDifference,
+            dailyTolerance,
+            shareDeltaRatio
+        };
     }
 
     function sortImportCandidatesForReview(candidates) {
@@ -298,6 +369,7 @@
         getGroups,
         getImportCandidateReviewRank,
         sortImportCandidatesForReview,
+        evaluateExistingShareCalibration,
         hasCompleteDisplayMetrics,
         getCloudSnapshotApplyDecision,
         normalizeActiveTab,

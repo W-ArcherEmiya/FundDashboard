@@ -37,6 +37,69 @@ runTest('sortImportCandidatesForReview puts unresolved rows first and keeps scre
     assert.equal(logic.getImportCandidateReviewRank(completeA), 2);
 });
 
+runTest('sortImportCandidatesForReview puts share calibration reviews before complete rows', () => {
+    const complete = { code: '000001', shares: '100', name: '完整基金' };
+    const review = { code: '000002', shares: '200', name: '份额待确认', requiresShareReview: true };
+
+    assert.deepEqual(logic.sortImportCandidatesForReview([complete, review]), [review, complete]);
+    assert.equal(logic.getImportCandidateReviewRank(review), 1);
+});
+
+runTest('evaluateExistingShareCalibration corrects shares when screenshot daily profit agrees', () => {
+    const result = logic.evaluateExistingShareCalibration({
+        existingShares: 1335.78,
+        proposedShares: 1317.49,
+        screenshotDailyProfit: 71.67,
+        marketDailyProfit: 72.67
+    });
+
+    assert.equal(result.status, 'calibrated');
+    assert.equal(result.requiresReview, false);
+    assert.equal(result.shares, 1317.49);
+    assertAlmostEqual(result.expectedDailyProfit, 71.675, 0.01);
+});
+
+runTest('evaluateExistingShareCalibration preserves shares when daily profit disagrees', () => {
+    const result = logic.evaluateExistingShareCalibration({
+        existingShares: 1335.78,
+        proposedShares: 1317.49,
+        screenshotDailyProfit: 60,
+        marketDailyProfit: 72.67
+    });
+
+    assert.equal(result.status, 'review');
+    assert.equal(result.requiresReview, true);
+    assert.equal(result.shares, 1335.78);
+    assert.equal(result.reason, 'daily-profit-mismatch');
+});
+
+runTest('evaluateExistingShareCalibration requires review when daily profit is unavailable', () => {
+    const result = logic.evaluateExistingShareCalibration({
+        existingShares: 1000,
+        proposedShares: 900,
+        screenshotDailyProfit: '',
+        marketDailyProfit: 12
+    });
+
+    assert.equal(result.status, 'review');
+    assert.equal(result.requiresReview, true);
+    assert.equal(result.shares, 1000);
+    assert.equal(result.reason, 'missing-daily-profit');
+});
+
+runTest('evaluateExistingShareCalibration keeps nearly identical existing shares', () => {
+    const result = logic.evaluateExistingShareCalibration({
+        existingShares: 1000,
+        proposedShares: 1001,
+        screenshotDailyProfit: '',
+        marketDailyProfit: ''
+    });
+
+    assert.equal(result.status, 'aligned');
+    assert.equal(result.requiresReview, false);
+    assert.equal(result.shares, 1000);
+});
+
 runTest('normalizeActiveTab falls back to summary when active group is missing', () => {
     const result = logic.normalizeActiveTab('tab-group-3', ['稳健', '高风险']);
 
