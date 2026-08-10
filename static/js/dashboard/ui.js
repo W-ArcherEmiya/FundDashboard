@@ -723,7 +723,10 @@
         const cachedResult = getCachedImportResult(candidate.code);
         const calibration = app.logic.evaluateExistingShareCalibration({
             existingShares: existingFund.shares,
+            existingCost: existingFund.cost,
             proposedShares: inferred.shares,
+            screenshotAmount: candidate.amount,
+            screenshotHoldProfit: candidate.holdProfit,
             screenshotDailyProfit: candidate.dailyProfit,
             marketDailyProfit: cachedResult && cachedResult.dailyProfit
         });
@@ -834,11 +837,13 @@
     function buildImportRow(candidate, index) {
         const hasCode = /^\d{6}$/.test(candidate.code || '');
         const hasSuggestions = Array.isArray(candidate.suggestions) && candidate.suggestions.length > 0 && !hasCode;
-        const shareReviewText = candidate.shareCalibrationReason === 'missing-daily-profit'
-            ? '缺少可交叉校验的昨日收益，已保留原份额，请打开确认。'
+        const shareReviewText = candidate.shareCalibrationReason === 'missing-validation-data'
+            ? '缺少可交叉校验的收益或成本数据，已保留原份额，请打开确认。'
             : (candidate.shareCalibrationReason === 'missing-nav'
                 ? '未取得可用于校验的净值，已保留原份额，请打开确认。'
-                : '截图金额与昨日收益校验不一致，已保留原份额，请打开确认。');
+                : (candidate.shareCalibrationReason === 'cost-basis-mismatch'
+                    ? '截图成本与原持仓不一致，可能发生过申购或赎回，请打开确认。'
+                    : '截图金额与昨日收益校验不一致，已保留原份额，请打开确认。'));
         const disabledNote = candidate.requiresShareReview
             ? `<div class="import-row-warning">${shareReviewText}</div>`
             : (candidate.shares
