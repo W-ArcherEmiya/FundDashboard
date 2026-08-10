@@ -25,6 +25,20 @@
         if (shouldRender) app.ui.renderUI(false);
     }
 
+    function applyLocalSnapshotOverrides() {
+        const results = logic.mergeHoldingSnapshotOverrides(
+            state.myFunds,
+            state.cachedResults,
+            state.syncSnapshotOverrides
+        );
+        const hasUsableSnapshot = results.some(item => (
+            logic.hasCompleteDisplayMetrics(item) || (item && item.isUnavailable)
+        ));
+        if (!hasUsableSnapshot) return false;
+        state.cachedResults = results;
+        return true;
+    }
+
     function openSyncModal() {
         state.syncModal.show();
     }
@@ -622,6 +636,7 @@
         autoRestoreCloudData,
         restoreLastSyncData,
         exportAnalysisCsv,
+        applyLocalSnapshotOverrides,
         refreshNetworkData
     };
 })();

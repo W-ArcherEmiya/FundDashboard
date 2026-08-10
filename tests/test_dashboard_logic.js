@@ -209,6 +209,44 @@ runTest('unavailable cloud response keeps the current complete snapshot', () => 
     assert.deepEqual(decision, { apply: false, reason: 'incoming-unavailable' });
 });
 
+runTest('mergeHoldingSnapshotOverrides keeps cached rows visible after screenshot import', () => {
+    const funds = [
+        { code: '000001', shares: '100', cost: '1', group: '稳健' },
+        { code: '000002', shares: '200', cost: '1', group: '高风险' }
+    ];
+    const cached = [
+        { code: '000001', name: '基金A', estNav: 1.1, dailyProfit: 1, holdProfit: 10, totalAsset: 110, valid: true },
+        { code: '000002', name: '基金B', estNav: 1.2, dailyProfit: 2, holdProfit: 40, totalAsset: 240, valid: true }
+    ];
+    const overrides = {
+        '000001': { estNav: 1.15, dailyProfit: 1.5, holdProfit: 15, totalAsset: 115 }
+    };
+
+    const results = logic.mergeHoldingSnapshotOverrides(funds, cached, overrides);
+
+    assert.equal(results.length, 2);
+    assert.equal(results[0].totalAsset, 115);
+    assert.equal(results[0].holdProfit, 15);
+    assert.equal(results[0].hasSyncOverride, true);
+    assert.equal(results[1].totalAsset, 240);
+    assert.equal(results[1].group, '高风险');
+});
+
+runTest('mergeHoldingSnapshotOverrides creates a visible row for a newly imported fund', () => {
+    const funds = [{ code: '000003', shares: '50', cost: '1.1', group: '混合' }];
+    const overrides = {
+        '000003': { estNav: 1.25, dailyProfit: 0.5, holdProfit: 7.5, totalAsset: 62.5 }
+    };
+
+    const results = logic.mergeHoldingSnapshotOverrides(funds, [], overrides);
+
+    assert.equal(results[0].code, '000003');
+    assert.equal(results[0].name, '基金 000003');
+    assert.equal(results[0].totalAsset, 62.5);
+    assert.equal(results[0].gztime, '截图快照');
+    assert.equal(logic.hasCompleteDisplayMetrics(results[0]), true);
+});
+
 runTest('summarizeDisplayData aggregates totals and group profit', () => {
     const summary = logic.summarizeDisplayData([
         { valid: true, isLoading: false, estNav: 1.2, dailyProfit: 12, holdProfit: 20, totalAsset: 100, gztime: '2026-04-11 14:00', group: '稳健' },
