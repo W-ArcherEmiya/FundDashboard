@@ -1,4 +1,5 @@
 import os
+import re
 import shutil
 import tempfile
 import threading
@@ -41,6 +42,17 @@ class FundDashboardAppTests(unittest.TestCase):
         self.assertIsNone(fund_app.normalize_sync_code('   '))
         self.assertIsNone(fund_app.normalize_sync_code('x' * (fund_app.SYNC_CODE_MAX_LENGTH + 1)))
         self.assertEqual(fund_app.normalize_sync_code(' 159357 '), '159357')
+
+    def test_index_uses_content_fingerprint_for_dashboard_assets(self):
+        response = self.client.get('/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers['Cache-Control'], 'no-cache, no-store, must-revalidate')
+        html = response.get_data(as_text=True)
+        self.assertRegex(fund_app.STATIC_ASSET_VERSION, r'^[0-9a-f]{16}$')
+        asset_versions = re.findall(r'/static/(?:css|js)/[^"?]+\?v=([0-9a-f]+)', html)
+        self.assertGreaterEqual(len(asset_versions), 9)
+        self.assertEqual(set(asset_versions), {fund_app.STATIC_ASSET_VERSION})
 
     def test_validate_funds_data_normalizes_default_group_and_numbers(self):
         data, error = fund_app.validate_funds_data([
