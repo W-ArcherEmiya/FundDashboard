@@ -9,7 +9,7 @@ import tempfile
 import threading
 import time
 
-from flask import Flask, jsonify, render_template, request, send_from_directory
+from flask import Flask, jsonify, make_response, render_template, request, send_from_directory
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 9 * 1024 * 1024
@@ -48,6 +48,35 @@ EXPORT_FIELDS = [
     'holdProfit',
     'navTime',
 ]
+
+
+def build_static_asset_version():
+    """Fingerprint dashboard assets so deployments cannot reuse stale browser code."""
+    digest = hashlib.sha256()
+    asset_paths = [
+        os.path.join(BASE_DIR, 'static', 'css', 'dashboard.css'),
+        *[
+            os.path.join(BASE_DIR, 'static', 'js', 'dashboard', filename)
+            for filename in (
+                'storage.js',
+                'state.js',
+                'utils.js',
+                'logic.js',
+                'data.js',
+                'ocr.js',
+                'ui.js',
+                'main.js',
+            )
+        ],
+    ]
+    for path in asset_paths:
+        digest.update(os.path.relpath(path, BASE_DIR).encode('utf-8'))
+        with open(path, 'rb') as asset_file:
+            digest.update(asset_file.read())
+    return digest.hexdigest()[:16]
+
+
+STATIC_ASSET_VERSION = build_static_asset_version()
 
 
 def build_rapidocr_params():
@@ -802,7 +831,11 @@ def run_server_ocr(engine_name, engine, image_path):
 
 @app.route('/')
 def index():
-    return render_template('index.html')
+    response = make_response(render_template('index.html', asset_version=STATIC_ASSET_VERSION))
+    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    return response
 
 # --- 新增：云端同步 API ---
 
