@@ -22,6 +22,29 @@
         return [...new Set(getHoldingFunds(myFunds).map(item => item.group || '默认分组'))];
     }
 
+    function resolveCandidateFromExistingHoldings(candidate, myFunds) {
+        if (!candidate || candidate.code || !Array.isArray(candidate.suggestions)) return candidate;
+
+        const heldCodes = new Set((myFunds || [])
+            .filter(fund => Number(fund && fund.shares) > 0)
+            .map(fund => String(fund.code || '').trim()));
+        const matchingSuggestions = candidate.suggestions.filter(suggestion =>
+            heldCodes.has(String(suggestion && suggestion.code || '').trim())
+        );
+        const matchingCodes = [...new Set(matchingSuggestions.map(suggestion => String(suggestion.code || '').trim()))];
+        if (matchingCodes.length !== 1) return candidate;
+
+        const suggestion = matchingSuggestions.find(item => String(item.code || '').trim() === matchingCodes[0]) || {};
+        return {
+            ...candidate,
+            code: matchingCodes[0],
+            name: suggestion.name || candidate.name,
+            type: suggestion.type || candidate.type || '',
+            unmatched: false,
+            source: `${candidate.source || 'candidate'}ExistingHolding`
+        };
+    }
+
     function getImportCandidateReviewRank(candidate) {
         const hasCode = /^\d{6}$/.test(String(candidate && candidate.code || ''));
         if (!hasCode || candidate.unmatched) return 0;
@@ -533,6 +556,7 @@
         isWatchlistOnlyFund,
         getHoldingFunds,
         getGroups,
+        resolveCandidateFromExistingHoldings,
         getImportCandidateReviewRank,
         sortImportCandidatesForReview,
         evaluateExistingShareCalibration,

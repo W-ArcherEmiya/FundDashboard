@@ -2292,6 +2292,10 @@ button {
         display: block;
     }
 
+    .page-shell-summary > .mobile-tabs + .empty-state {
+        margin-top: 16px;
+    }
+
     .group-list-toolbar {
         display: none;
     }

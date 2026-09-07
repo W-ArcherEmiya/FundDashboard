@@ -98,6 +98,7 @@ class FundRefreshTests(unittest.TestCase):
 
     def test_fetch_latest_nav_parses_lightweight_api_response(self):
         original_fetch_text = fund_refresh.fetch_text
+        fund_refresh._latest_nav_cache.clear()
         try:
             fund_refresh.fetch_text = lambda *_args, **_kwargs: (
                 '{"Data":{"LSJZList":[{"DWJZ":"1.0918"}]},"ErrCode":0}'
@@ -107,6 +108,41 @@ class FundRefreshTests(unittest.TestCase):
             fund_refresh.fetch_text = original_fetch_text
 
         self.assertEqual(nav, 1.0918)
+
+    def test_fetch_latest_nav_falls_back_to_full_history_source(self):
+        original_recent = fund_refresh.fetch_recent_history
+        original_history = fund_refresh.fetch_history
+        fund_refresh._latest_nav_cache.clear()
+        try:
+            fund_refresh.fetch_recent_history = lambda _code: None
+            fund_refresh.fetch_history = lambda _code: {'latest': 2.9685}
+
+            nav = fund_refresh.fetch_latest_nav('002834')
+        finally:
+            fund_refresh.fetch_recent_history = original_recent
+            fund_refresh.fetch_history = original_history
+            fund_refresh._latest_nav_cache.clear()
+
+        self.assertEqual(nav, 2.9685)
+
+    def test_fetch_latest_navs_keeps_other_results_when_one_lookup_raises(self):
+        original_latest_nav = fund_refresh.fetch_latest_nav
+        original_realtime = fund_refresh.fetch_realtime_estimate
+        try:
+            def fake_latest_nav(code):
+                if code == '999999':
+                    raise RuntimeError('temporary provider failure')
+                return 1.4782
+
+            fund_refresh.fetch_latest_nav = fake_latest_nav
+            fund_refresh.fetch_realtime_estimate = lambda _code: None
+
+            navs = fund_refresh.fetch_latest_navs(['022851', '999999'])
+        finally:
+            fund_refresh.fetch_latest_nav = original_latest_nav
+            fund_refresh.fetch_realtime_estimate = original_realtime
+
+        self.assertEqual(navs, {'022851': 1.4782})
 
     def test_fetch_recent_history_parses_two_nav_records(self):
         original_fetch_text = fund_refresh.fetch_text
