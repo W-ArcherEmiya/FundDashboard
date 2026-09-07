@@ -1089,6 +1089,8 @@
         state.syncSnapshotOverrides = state.syncSnapshotOverrides || {};
         const override = {
             ...(state.syncSnapshotOverrides[code] || {}),
+            name: String(candidate && candidate.name || '').trim() || `基金 ${code}`,
+            group: String(candidate && candidate.group || '').trim() || '默认分组',
             totalAsset: amount,
             holdProfit,
             updatedAt: new Date().toISOString()
@@ -1121,8 +1123,13 @@
         if (index === -1) return false;
         const group = String(candidate.group || '').trim() || state.myFunds[index].group || '默认分组';
 
+        const candidateName = String(candidate.name || '').trim();
+        const genericName = `基金 ${candidate.code}`;
         const updatedFund = {
             ...state.myFunds[index],
+            name: candidateName && candidateName !== genericName
+                ? candidateName
+                : (state.myFunds[index].name || candidateName || genericName),
             group
         };
         if (!candidate.requiresShareReview) {
@@ -2073,6 +2080,7 @@
 
         selectedEntries.forEach(({ candidate, index }) => {
             const code = String(candidate.code || '').trim();
+            const name = String(candidate.name || '').trim() || `基金 ${code}`;
             const shares = String(candidate.shares || '').trim();
             const cost = String(candidate.cost || '').trim();
             const group = String(candidate.group || getDefaultImportGroup()).trim() || '默认分组';
@@ -2083,6 +2091,9 @@
                 skipped += 1;
                 return;
             }
+
+            candidate.name = name;
+            candidate.group = group;
 
             if (state.myFunds.some(fund => fund.code === code)) {
                 if (updateExistingFundFromCandidate({ ...candidate, code, shares, cost, group })) {
@@ -2095,12 +2106,7 @@
                 return;
             }
 
-            state.myFunds.push({
-                code,
-                shares,
-                cost,
-                group
-            });
+            state.myFunds.push(logic.buildImportedHolding({ ...candidate, code, name, shares, cost, group }));
             storeCandidateSnapshotOverride(code, candidate);
             added += 1;
             processedIndexes.add(index);
@@ -2184,6 +2190,7 @@
         const oldCode = existingFund ? existingFund.code : '';
         const newFund = {
             code,
+            ...(existingFund && existingFund.name ? { name: existingFund.name } : {}),
             shares,
             cost,
             group,

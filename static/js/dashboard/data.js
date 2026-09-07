@@ -17,6 +17,10 @@
             const value = Number(override[field]);
             if (Number.isFinite(value)) merged[field] = value;
         });
+        const overrideName = String(override.name || '').trim();
+        const overrideGroup = String(override.group || '').trim();
+        if (overrideName) merged.name = overrideName;
+        if (overrideGroup) merged.group = overrideGroup;
         return merged;
     }
 
@@ -55,7 +59,7 @@
             const fallback = override ? {
                 code: fund.code,
                 group: fund.group || '默认分组',
-                name: `基金 ${fund.code}`,
+                name: fund.name || override.name || `基金 ${fund.code}`,
                 gztime: '截图快照',
                 valid: true,
                 isActual: true,
@@ -395,7 +399,7 @@
             return incoming || {
                 code: fund.code,
                 group: fund.group || '默认分组',
-                name: `基金 ${fund.code}`,
+                name: fund.name || `基金 ${fund.code}`,
                 gztime: '行情暂不可用',
                 valid: true,
                 isUnavailable: true,

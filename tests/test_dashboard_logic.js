@@ -219,6 +219,24 @@ runTest('watchlist tab is fixed and watchlist-only funds do not create holding g
     });
 });
 
+runTest('buildImportedHolding preserves recognized name and assigned group', () => {
+    const holding = logic.buildImportedHolding({
+        code: ' 000001 ',
+        name: '  截图识别基金  ',
+        shares: 123.45,
+        cost: ' 1.2345 ',
+        group: ' 高风险 '
+    });
+
+    assert.deepEqual(holding, {
+        code: '000001',
+        name: '截图识别基金',
+        shares: '123.45',
+        cost: '1.2345',
+        group: '高风险'
+    });
+});
+
 runTest('buildDisplayData returns loading placeholders when cache is not ready', () => {
     const myFunds = [{ code: '000001', group: '稳健' }];
     const displayData = logic.buildDisplayData(myFunds, [], false);
@@ -283,15 +301,16 @@ runTest('mergeHoldingSnapshotOverrides keeps cached rows visible after screensho
 });
 
 runTest('mergeHoldingSnapshotOverrides creates a visible row for a newly imported fund', () => {
-    const funds = [{ code: '000003', shares: '50', cost: '1.1', group: '混合' }];
+    const funds = [{ code: '000003', name: '截图识别基金', shares: '50', cost: '1.1', group: '混合' }];
     const overrides = {
-        '000003': { estNav: 1.25, dailyProfit: 0.5, holdProfit: 7.5, totalAsset: 62.5 }
+        '000003': { name: '截图识别基金', group: '混合', estNav: 1.25, dailyProfit: 0.5, holdProfit: 7.5, totalAsset: 62.5 }
     };
 
     const results = logic.mergeHoldingSnapshotOverrides(funds, [], overrides);
 
     assert.equal(results[0].code, '000003');
-    assert.equal(results[0].name, '基金 000003');
+    assert.equal(results[0].name, '截图识别基金');
+    assert.equal(results[0].group, '混合');
     assert.equal(results[0].totalAsset, 62.5);
     assert.equal(results[0].gztime, '截图快照');
     assert.equal(logic.hasCompleteDisplayMetrics(results[0]), true);
