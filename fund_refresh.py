@@ -27,6 +27,7 @@ EASTMONEY_VALUATION_URL = (
 )
 EASTMONEY_INDEX_ESTIMATE_PAGE_URL = "https://fund.eastmoney.com/lof_fundguzhi{page}.html"
 INDEX_ESTIMATE_CACHE_SECONDS = 90
+LATEST_NAV_CACHE_SECONDS = 30 * 60
 INDEX_ESTIMATE_CATEGORY_PAGES = tuple(range(1, 10))
 
 _index_estimate_cache: dict[str, Any] = {
@@ -34,6 +35,8 @@ _index_estimate_cache: dict[str, Any] = {
     "expiresAt": 0.0,
     "items": {},
 }
+
+_latest_nav_cache: dict[str, tuple[float, float]] = {}
 
 
 def utc_now_iso() -> str:
@@ -432,14 +435,25 @@ def supports_realtime_estimate(history: dict[str, Any] | None) -> bool:
 
 
 def fetch_latest_nav(code: str) -> float | None:
-    """Fetch only the latest NAV record instead of the full history script."""
+    """Fetch the latest NAV with an independent history-source fallback."""
+    cached = _latest_nav_cache.get(code)
+    if cached and time.monotonic() < cached[1]:
+        return cached[0]
+
     history = fetch_recent_history(code)
+    if not history:
+        history = fetch_history(code)
     if not history:
         return None
     if history.get("isMoneyFund"):
-        return 1.0
-    nav = to_float(history.get("latest"))
-    return nav if nav > 0 else None
+        nav = 1.0
+    else:
+        nav = to_float(history.get("latest"))
+    if nav <= 0:
+        return None
+
+    _latest_nav_cache[code] = (nav, time.monotonic() + LATEST_NAV_CACHE_SECONDS)
+    return nav
 
 
 def build_snapshot_item(
@@ -625,7 +639,10 @@ def fetch_latest_navs(codes: list[str]) -> dict[str, float]:
     with ThreadPoolExecutor(max_workers=workers) as executor:
         futures = [executor.submit(fetch_one, code) for code in unique_codes]
         for future in as_completed(futures):
-            code, nav = future.result()
+            try:
+                code, nav = future.result()
+            except Exception:
+                continue
             if nav is not None:
                 navs[code] = nav
 

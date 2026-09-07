@@ -1473,7 +1473,8 @@
             return `${amount.toFixed(2)}|${holdProfit.toFixed(2)}`;
         };
 
-        candidates.forEach(candidate => {
+        candidates.forEach(rawCandidate => {
+            const candidate = logic.resolveCandidateFromExistingHoldings(rawCandidate, state.myFunds);
             if (candidate.code && seenCodes.has(candidate.code)) {
                 const duplicate = uniqueCandidates.find(existing => existing.code === candidate.code);
                 if (duplicate) mergeDuplicateCandidate(duplicate, candidate);

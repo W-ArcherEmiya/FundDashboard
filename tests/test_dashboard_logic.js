@@ -45,6 +45,42 @@ runTest('sortImportCandidatesForReview puts share calibration reviews before com
     assert.equal(logic.getImportCandidateReviewRank(review), 1);
 });
 
+runTest('resolveCandidateFromExistingHoldings selects the only held suggestion', () => {
+    const candidate = {
+        code: '',
+        name: '华夏上证科创板半导体材料设备主...',
+        unmatched: true,
+        suggestions: [
+            { code: '020356', name: '华夏上证科创板半导体材料设备主题ETF联接A' },
+            { code: '020357', name: '华夏上证科创板半导体材料设备主题ETF联接C' }
+        ]
+    };
+
+    const resolved = logic.resolveCandidateFromExistingHoldings(candidate, [
+        { code: '020357', shares: '100', group: '高风险' }
+    ]);
+
+    assert.equal(resolved.code, '020357');
+    assert.equal(resolved.name, '华夏上证科创板半导体材料设备主题ETF联接C');
+    assert.equal(resolved.unmatched, false);
+});
+
+runTest('resolveCandidateFromExistingHoldings keeps ambiguity when multiple suggestions are held', () => {
+    const candidate = {
+        code: '',
+        unmatched: true,
+        suggestions: [{ code: '000001' }, { code: '000002' }]
+    };
+
+    const resolved = logic.resolveCandidateFromExistingHoldings(candidate, [
+        { code: '000001', shares: '10' },
+        { code: '000002', shares: '20' }
+    ]);
+
+    assert.equal(resolved, candidate);
+    assert.equal(resolved.code, '');
+});
+
 runTest('evaluateExistingShareCalibration corrects shares when screenshot daily profit agrees', () => {
     const result = logic.evaluateExistingShareCalibration({
         existingShares: 1335.78,
