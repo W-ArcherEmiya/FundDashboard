@@ -135,6 +135,24 @@
         tabContainer.innerHTML = tabsHtml;
         document.getElementById('contentArea').innerHTML = generateCurrentTabContent(groups, isLoading);
         renderMobileBottomNav(groups);
+        updateGroupAddFab();
+    }
+
+    function updateGroupAddFab() {
+        const fab = document.querySelector('.fab-btn');
+        if (!fab) return;
+
+        const groupName = state.activeTabId !== 'tab-summary' ? state.currentActiveGroup : '';
+        fab.classList.toggle('fab-btn-visible', Boolean(groupName));
+        if (groupName) {
+            fab.dataset.defaultGroup = groupName;
+            fab.setAttribute('aria-label', `添加基金到${groupName}`);
+            fab.title = `添加到${groupName}`;
+        } else {
+            delete fab.dataset.defaultGroup;
+            fab.setAttribute('aria-label', '添加基金');
+            fab.title = '添加基金';
+        }
     }
 
     function switchTab(tabId, groupName) {
@@ -402,6 +420,13 @@
         return `
             <section class="page-shell page-shell-group">
                 ${renderMobileTabs(groups)}
+                <div class="group-list-toolbar">
+                    <div class="group-list-toolbar-copy">
+                        <h2 class="group-list-title">${utils.escapeHtml(currentGroupName)}</h2>
+                        <span class="group-list-count">${groupItems.length} 项资产</span>
+                    </div>
+                    ${renderClearGroupButton('清空当前分类')}
+                </div>
                 ${groupSummaryHtml}
                 <div class="panel fund-list-panel">
                     <div class="fund-list-head">
@@ -414,10 +439,6 @@
                     </div>
                     <div class="fund-list">
                         ${itemsHtml}
-                        <button class="fund-list-add" data-action="open-add" data-default-group="${utils.escapeHtml(currentGroupName)}">
-                            <span class="add-tile-icon">+</span>
-                            <span class="fund-list-add-copy">添加到 ${utils.escapeHtml(currentGroupName)}</span>
-                        </button>
                     </div>
                 </div>
             </section>`;
@@ -441,9 +462,19 @@
 
         return `
             <div class="mobile-group-summary" aria-label="${utils.escapeHtml(groupName || '当前分组')}概览">
-                <div class="mobile-group-summary-meta">${groupItems.length} 项资产 | 按${keyLabels[sortKey]}${direction}</div>
+                <div class="mobile-group-summary-meta">${groupItems.length} 项 | 按${keyLabels[sortKey]}${direction}</div>
                 <div class="mobile-group-summary-asset">${renderAmountText(totalAsset, { currency: true, compact: false })}</div>
+                ${renderClearGroupButton('清空', true)}
             </div>`;
+    }
+
+    function renderClearGroupButton(label, mobile = false) {
+        const className = mobile ? 'group-clear-btn group-clear-btn-mobile' : 'group-clear-btn';
+        return `
+            <button type="button" class="${className}" data-action="clear-current-group" title="清空当前分类的全部基金" aria-label="清空当前分类的全部基金">
+                <i class="bi bi-trash3" aria-hidden="true"></i>
+                <span>${label}</span>
+            </button>`;
     }
 
     function renderSortableHead(key, label, shortLabel = label) {
@@ -1881,6 +1912,35 @@
         }
     }
 
+    function clearCurrentGroup() {
+        const groupName = state.currentActiveGroup;
+        const groupCount = state.myFunds.filter(fund => (fund.group || '默认分组') === groupName).length;
+        if (!groupName || groupCount === 0) {
+            showNotice('当前分类没有可清空的基金', 'info');
+            return;
+        }
+
+        const confirmed = confirm(`确定清空“${groupName}”分类中的 ${groupCount} 只基金？\n\n清空后这些持仓将从资产看板删除，其他分类不受影响。`);
+        if (!confirmed) return;
+
+        const result = logic.removeFundsByGroup(
+            state.myFunds,
+            state.cachedResults,
+            state.syncSnapshotOverrides,
+            groupName
+        );
+        state.myFunds = result.funds;
+        state.cachedResults = result.cachedResults;
+        state.syncSnapshotOverrides = result.syncSnapshotOverrides;
+        state.activeTabId = 'tab-summary';
+        state.currentActiveGroup = null;
+        app.persistSyncSnapshotOverrides();
+        app.persistFunds();
+        app.persistActiveTab();
+        renderUI(false);
+        showNotice(`已清空“${groupName}”分类，共删除 ${result.removedCount} 只基金`, 'success');
+    }
+
     app.ui = {
         renderUI,
         showNotice,
@@ -1893,6 +1953,7 @@
         selectGroup,
         saveFund,
         deleteFund,
+        clearCurrentGroup,
         sortGroupList,
         importFromScreenshot,
         editImportCandidate,

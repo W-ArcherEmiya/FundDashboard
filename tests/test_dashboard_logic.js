@@ -247,6 +247,31 @@ runTest('mergeHoldingSnapshotOverrides creates a visible row for a newly importe
     assert.equal(logic.hasCompleteDisplayMetrics(results[0]), true);
 });
 
+runTest('removeFundsByGroup removes only the current group and keeps caches aligned', () => {
+    const funds = [
+        { code: '000001', group: '稳健' },
+        { code: '000002', group: '高风险' },
+        { code: '000003', group: '稳健' }
+    ];
+    const cachedResults = [
+        { code: '000001', totalAsset: 100 },
+        { code: '000002', totalAsset: 200 },
+        { code: '000003', totalAsset: 300 }
+    ];
+    const overrides = {
+        '000001': { totalAsset: 101 },
+        '000002': { totalAsset: 202 },
+        '000003': { totalAsset: 303 }
+    };
+
+    const result = logic.removeFundsByGroup(funds, cachedResults, overrides, '稳健');
+
+    assert.equal(result.removedCount, 2);
+    assert.deepEqual(result.funds, [{ code: '000002', group: '高风险' }]);
+    assert.deepEqual(result.cachedResults, [{ code: '000002', totalAsset: 200 }]);
+    assert.deepEqual(result.syncSnapshotOverrides, { '000002': { totalAsset: 202 } });
+});
+
 runTest('summarizeDisplayData aggregates totals and group profit', () => {
     const summary = logic.summarizeDisplayData([
         { valid: true, isLoading: false, estNav: 1.2, dailyProfit: 12, holdProfit: 20, totalAsset: 100, gztime: '2026-04-11 14:00', group: '稳健' },

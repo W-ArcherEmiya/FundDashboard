@@ -73,7 +73,8 @@
                 valid: result.valid !== false,
                 isActual: Boolean(result.isActual),
                 isBackup: Boolean(result.isBackup),
-                isUnavailable: Boolean(result.isUnavailable)
+                isUnavailable: Boolean(result.isUnavailable),
+                estimateSource: String(result.estimateSource || '')
             };
 
             ['estRate', 'estNav', 'dailyProfit', 'holdProfit', 'totalAsset'].forEach(field => {

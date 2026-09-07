@@ -203,6 +203,41 @@
         });
     }
 
+    function removeFundsByGroup(funds, cachedResults, overrides, groupName) {
+        const sourceFunds = funds || [];
+        const sourceResults = cachedResults || [];
+        const cachedByCode = new Map();
+        sourceResults.forEach(item => {
+            if (item && item.code) cachedByCode.set(item.code, item);
+        });
+
+        const keptFunds = [];
+        const keptResults = [];
+        const removedCodes = new Set();
+
+        sourceFunds.forEach((fund, index) => {
+            const fundGroup = fund.group || '默认分组';
+            if (fundGroup === groupName) {
+                if (fund.code) removedCodes.add(fund.code);
+                return;
+            }
+
+            keptFunds.push(fund);
+            const direct = sourceResults[index];
+            keptResults.push(direct && direct.code === fund.code ? direct : (cachedByCode.get(fund.code) || null));
+        });
+
+        const keptOverrides = { ...(overrides || {}) };
+        removedCodes.forEach(code => delete keptOverrides[code]);
+
+        return {
+            funds: keptFunds,
+            cachedResults: keptResults,
+            syncSnapshotOverrides: keptOverrides,
+            removedCount: sourceFunds.length - keptFunds.length
+        };
+    }
+
     function normalizeActiveTab(activeTabId, groups) {
         if (activeTabId === 'tab-summary') {
             return { activeTabId: 'tab-summary', currentActiveGroup: null };
@@ -447,6 +482,7 @@
         hasCompleteDisplayMetrics,
         getCloudSnapshotApplyDecision,
         mergeHoldingSnapshotOverrides,
+        removeFundsByGroup,
         normalizeActiveTab,
         buildDisplayData,
         summarizeDisplayData,
