@@ -1,3 +1,4 @@
+import json
 import unittest
 from datetime import datetime, timezone
 
@@ -9,6 +10,76 @@ SAME_DAY_HISTORY_MS = int(datetime(2026, 4, 11, 15, 0, tzinfo=timezone.utc).time
 
 
 class FundRefreshTests(unittest.TestCase):
+    def test_parse_realtime_estimate_payload_accepts_today_value(self):
+        inner = {
+            'Datas': ['1,09:30,-0.10', '2,09:31,-0.20'],
+            'Expansion': {
+                'FCODE': '016186',
+                'SHORTNAME': '广发电力ETF联接C',
+                'GZTIME': '2026-09-07 14:35',
+                'GZ': '1.0808',
+                'GSZZL': '-0.83',
+                'DWJZ': '1.0898',
+            },
+        }
+        source = json.dumps({'data': json.dumps(inner, ensure_ascii=False)}, ensure_ascii=False)
+
+        estimate = fund_refresh.parse_realtime_estimate_payload(
+            source,
+            '016186',
+            now=datetime(2026, 9, 7, 6, 35, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(estimate['name'], '广发电力ETF联接C')
+        self.assertEqual(estimate['gsz'], 1.0808)
+        self.assertEqual(estimate['gszzl'], -0.83)
+        self.assertEqual(estimate['estimateSource'], '天天基金盘中估值')
+
+    def test_parse_realtime_estimate_payload_rejects_stale_or_wrong_fund(self):
+        inner = {
+            'Expansion': {
+                'FCODE': '016186',
+                'GZTIME': '2026-09-06 15:00',
+                'GZ': '1.0808',
+                'GSZZL': '-0.83',
+                'DWJZ': '1.0898',
+            },
+        }
+        source = json.dumps({'data': json.dumps(inner)})
+        now = datetime(2026, 9, 7, 6, 35, tzinfo=timezone.utc)
+
+        self.assertIsNone(fund_refresh.parse_realtime_estimate_payload(source, '016186', now=now))
+        self.assertIsNone(fund_refresh.parse_realtime_estimate_payload(source, '001593', now=now))
+
+    def test_parse_index_estimate_page_extracts_current_values(self):
+        source = """
+            <span id="gsdata">2026-09-07 估算数据</span>
+            <span id="dwjzdata">2026-09-04 单位净值</span>
+            <tbody id="tableContent">
+                <tr>
+                    <td>x</td><td>1</td><td>006479</td>
+                    <td><a>广发纳斯达克100ETF联接C</a><a>估算图</a></td>
+                    <td data-gz="8.0330">8.0330</td><td data-gz="0.20%">0.20%</td>
+                    <td>---</td><td>---</td><td>---</td><td>8.0310</td>
+                </tr>
+            </tbody>
+            <a href="lof_fundguzhi7.html">7</a>
+        """
+
+        estimates, page_count = fund_refresh.parse_index_estimate_page(source, '2026-09-07')
+
+        self.assertEqual(page_count, 7)
+        self.assertEqual(estimates['006479']['name'], '广发纳斯达克100ETF联接C')
+        self.assertEqual(estimates['006479']['gsz'], 8.033)
+        self.assertEqual(estimates['006479']['dwjz'], 8.031)
+        self.assertEqual(estimates['006479']['estimateSource'], '天天基金指数参考估值')
+
+    def test_parse_index_estimate_page_rejects_previous_day(self):
+        source = '<span id="gsdata">2026-09-06 估算数据</span><tbody id="tableContent"></tbody>'
+        estimates, page_count = fund_refresh.parse_index_estimate_page(source, '2026-09-07')
+        self.assertEqual(estimates, {})
+        self.assertEqual(page_count, 0)
+
     def test_fetch_latest_navs_prefers_latest_nav_api_and_falls_back_to_realtime(self):
         original_latest_nav = fund_refresh.fetch_latest_nav
         original_realtime = fund_refresh.fetch_realtime_estimate
@@ -41,7 +112,7 @@ class FundRefreshTests(unittest.TestCase):
         original_fetch_text = fund_refresh.fetch_text
         try:
             fund_refresh.fetch_text = lambda *_args, **_kwargs: (
-                '{"Data":{"FundType":"003","LSJZList":['
+                '{"Data":{"FundType":"003","Feature":"042,080","LSJZList":['
                 '{"FSRQ":"2026-08-03","DWJZ":"1.0919"},'
                 '{"FSRQ":"2026-07-31","DWJZ":"1.0918"}]}}'
             )
@@ -53,6 +124,24 @@ class FundRefreshTests(unittest.TestCase):
         self.assertEqual(history['prev'], 1.0918)
         self.assertEqual(fund_refresh.date_ms_to_bj_date_str(history['dateMs']), '2026-08-03')
         self.assertFalse(history['isMoneyFund'])
+        self.assertEqual(history['fundType'], '003')
+        self.assertEqual(history['features'], ['042', '080'])
+        self.assertFalse(fund_refresh.supports_realtime_estimate(history))
+
+    def test_realtime_estimate_support_includes_index_and_qdii_funds(self):
+        self.assertTrue(fund_refresh.supports_realtime_estimate({
+            'fundType': '003',
+            'features': ['042', '050'],
+        }))
+        self.assertTrue(fund_refresh.supports_realtime_estimate({
+            'fundType': '007',
+            'features': [],
+        }))
+        self.assertFalse(fund_refresh.supports_realtime_estimate({
+            'fundType': '005',
+            'isMoneyFund': True,
+            'features': ['050'],
+        }))
 
     def test_fetch_recent_history_handles_money_fund_income(self):
         original_fetch_text = fund_refresh.fetch_text
@@ -83,6 +172,44 @@ class FundRefreshTests(unittest.TestCase):
         self.assertEqual(item['estNav'], 1.15)
         self.assertAlmostEqual(item['dailyProfit'], 0.5)
         self.assertAlmostEqual(item['holdProfit'], -1)
+
+    def test_refresh_snapshot_uses_index_estimate_when_minute_source_is_unavailable(self):
+        original_recent = fund_refresh.fetch_recent_history
+        original_history = fund_refresh.fetch_history
+        original_realtime = fund_refresh.fetch_realtime_estimate
+        original_index = fund_refresh.fetch_index_estimates
+        try:
+            fund_refresh.fetch_recent_history = lambda _code: {
+                'name': '广发纳斯达克100ETF联接C',
+                'latest': 8.031,
+                'prev': 8.0,
+                'dateMs': fund_refresh.date_str_to_ms('2026-09-04'),
+            }
+            fund_refresh.fetch_history = lambda _code: None
+            fund_refresh.fetch_realtime_estimate = lambda _code: None
+            fund_refresh.fetch_index_estimates = lambda: {
+                '006479': {
+                    'name': '广发纳斯达克100ETF联接C',
+                    'gsz': 8.033,
+                    'dwjz': 8.031,
+                    'gszzl': 0.20,
+                    'gztime': '2026-09-07 参考估值',
+                    'estimateSource': '天天基金指数参考估值',
+                },
+            }
+
+            snapshot = fund_refresh.refresh_funds_snapshot([
+                {'code': '006479', 'shares': '10', 'cost': '7.5', 'group': '美股'},
+            ])
+        finally:
+            fund_refresh.fetch_recent_history = original_recent
+            fund_refresh.fetch_history = original_history
+            fund_refresh.fetch_realtime_estimate = original_realtime
+            fund_refresh.fetch_index_estimates = original_index
+
+        self.assertFalse(snapshot[0]['isActual'])
+        self.assertEqual(snapshot[0]['estNav'], 8.033)
+        self.assertEqual(snapshot[0]['estimateSource'], '天天基金指数参考估值')
 
     def test_build_snapshot_item_keeps_same_day_settlement_estimated_before_cutoff(self):
         item = build_snapshot_item(

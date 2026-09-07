@@ -3,15 +3,17 @@ from __future__ import annotations
 import json
 import math
 import re
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone, timedelta
+from html.parser import HTMLParser
 from typing import Any
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 
 
 REQUEST_TIMEOUT_SECONDS = 8
-MAX_REFRESH_WORKERS = 6
+MAX_REFRESH_WORKERS = 12
 MAX_NAV_WORKERS = 6
 USER_AGENT = "Mozilla/5.0 FundDashboard/1.0"
 EASTMONEY_HISTORY_URL = "https://fund.eastmoney.com/pingzhongdata/{code}.js?rt={timestamp}"
@@ -19,18 +21,35 @@ EASTMONEY_LATEST_NAV_URL = (
     "https://api.fund.eastmoney.com/f10/lsjz"
     "?fundCode={code}&pageIndex=1&pageSize={page_size}"
 )
-FUNDGZ_URL = "https://fundgz.1234567.com.cn/js/{code}.js?rt={timestamp}"
+EASTMONEY_VALUATION_URL = (
+    "https://fundcomapi.tiantianfunds.com/mm/fundTrade/FundValuationDetail"
+    "?FCODE={code}&_={timestamp}"
+)
+EASTMONEY_INDEX_ESTIMATE_PAGE_URL = "https://fund.eastmoney.com/lof_fundguzhi{page}.html"
+INDEX_ESTIMATE_CACHE_SECONDS = 90
+INDEX_ESTIMATE_CATEGORY_PAGES = tuple(range(1, 10))
+
+_index_estimate_cache: dict[str, Any] = {
+    "date": "",
+    "expiresAt": 0.0,
+    "items": {},
+}
 
 
 def utc_now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
-def fetch_text(url: str, timeout: int = REQUEST_TIMEOUT_SECONDS, headers: dict[str, str] | None = None) -> str:
+def fetch_text(
+    url: str,
+    timeout: int = REQUEST_TIMEOUT_SECONDS,
+    headers: dict[str, str] | None = None,
+    encoding: str = "utf-8-sig",
+) -> str:
     request_headers = {"User-Agent": USER_AGENT, **(headers or {})}
     request = Request(url, headers=request_headers)
     with urlopen(request, timeout=timeout) as response:
-        return response.read().decode("utf-8-sig", errors="replace")
+        return response.read().decode(encoding, errors="replace")
 
 
 def parse_js_string(source: str, name: str) -> str:
@@ -64,6 +83,14 @@ def parse_jsonp_payload(source: str) -> dict[str, Any] | None:
     except json.JSONDecodeError:
         return None
     return payload if isinstance(payload, dict) else None
+
+
+def parse_finite_float(value: Any) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
 
 
 def to_float(value: Any, default: float = 0.0) -> float:
@@ -115,15 +142,203 @@ def date_ms_to_badge(date_ms: int | float | None) -> str:
     return date_str[5:]
 
 
-def fetch_realtime_estimate(code: str) -> dict[str, Any] | None:
-    url = FUNDGZ_URL.format(code=code, timestamp=int(datetime.now().timestamp() * 1000))
+def parse_realtime_estimate_payload(
+    source: str,
+    code: str,
+    now: datetime | None = None,
+) -> dict[str, Any] | None:
     try:
-        payload = parse_jsonp_payload(fetch_text(url))
+        outer = json.loads(source)
+        inner_raw = outer.get("data") if isinstance(outer, dict) else None
+        inner = json.loads(inner_raw) if isinstance(inner_raw, str) else inner_raw
+    except json.JSONDecodeError:
+        return None
+
+    expansion = inner.get("Expansion") if isinstance(inner, dict) else None
+    if not isinstance(expansion, dict) or str(expansion.get("FCODE", "")).strip() != code:
+        return None
+
+    gztime = str(expansion.get("GZTIME") or "").strip()
+    estimate_date = gztime.split(" ")[0] if gztime else ""
+    if estimate_date != bj_now(now).strftime("%Y-%m-%d"):
+        return None
+
+    estimated_nav = parse_finite_float(expansion.get("GZ"))
+    previous_nav = parse_finite_float(expansion.get("DWJZ"))
+    estimated_rate = parse_finite_float(expansion.get("GSZZL"))
+    if estimated_nav is None or estimated_nav <= 0 or previous_nav is None or previous_nav <= 0:
+        return None
+    if estimated_rate is None:
+        return None
+
+    return {
+        "fundcode": code,
+        "name": str(expansion.get("SHORTNAME") or "").strip(),
+        "gsz": estimated_nav,
+        "dwjz": previous_nav,
+        "gszzl": estimated_rate,
+        "gztime": gztime,
+        "estimateSource": "天天基金盘中估值",
+    }
+
+
+def fetch_realtime_estimate(code: str) -> dict[str, Any] | None:
+    url = EASTMONEY_VALUATION_URL.format(
+        code=code,
+        timestamp=int(datetime.now().timestamp() * 1000),
+    )
+    try:
+        source = fetch_text(url, headers={"Referer": "https://fund.eastmoney.com/"})
     except (OSError, URLError, TimeoutError):
         return None
-    if not payload or str(payload.get("fundcode", "")).strip() != code:
-        return None
-    return payload
+    return parse_realtime_estimate_payload(source, code)
+
+
+class _IndexEstimatePageParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.calculation_date = ""
+        self.value_date = ""
+        self.items: dict[str, dict[str, Any]] = {}
+        self._date_capture = ""
+        self._date_capture_depth = 0
+        self._date_text: list[str] = []
+        self._table_depth = 0
+        self._row: list[dict[str, Any]] | None = None
+        self._cell: dict[str, Any] | None = None
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        attributes = dict(attrs)
+        element_id = attributes.get("id") or ""
+
+        if self._date_capture:
+            self._date_capture_depth += 1
+        elif element_id in {"gsdata", "dwjzdata"}:
+            self._date_capture = element_id
+            self._date_capture_depth = 1
+            self._date_text = []
+
+        if self._table_depth:
+            self._table_depth += 1
+            if tag == "tr":
+                self._row = []
+            elif tag == "td" and self._row is not None:
+                self._cell = {"attrs": attributes, "text": []}
+        elif element_id == "tableContent":
+            self._table_depth = 1
+
+    def handle_data(self, data: str) -> None:
+        if self._date_capture:
+            self._date_text.append(data)
+        if self._cell is not None:
+            self._cell["text"].append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        if self._cell is not None and tag == "td":
+            self._cell["text"] = "".join(self._cell["text"]).strip()
+            if self._row is not None:
+                self._row.append(self._cell)
+            self._cell = None
+        elif self._row is not None and tag == "tr":
+            self._store_row(self._row)
+            self._row = None
+
+        if self._table_depth:
+            self._table_depth -= 1
+
+        if self._date_capture:
+            self._date_capture_depth -= 1
+            if self._date_capture_depth == 0:
+                match = re.search(r"\d{4}-\d{2}-\d{2}", "".join(self._date_text))
+                value = match.group(0) if match else ""
+                if self._date_capture == "gsdata":
+                    self.calculation_date = value
+                else:
+                    self.value_date = value
+                self._date_capture = ""
+                self._date_text = []
+
+    def _store_row(self, cells: list[dict[str, Any]]) -> None:
+        if len(cells) < 10:
+            return
+        code = str(cells[2]["text"]).strip()
+        if not re.fullmatch(r"\d{6}", code):
+            return
+
+        estimated_nav = parse_finite_float(cells[4]["attrs"].get("data-gz") or cells[4]["text"])
+        rate_text = str(cells[5]["attrs"].get("data-gz") or cells[5]["text"]).strip().rstrip("%")
+        estimated_rate = parse_finite_float(rate_text)
+        previous_nav = parse_finite_float(cells[9]["text"])
+        if estimated_nav is None or estimated_nav <= 0 or estimated_rate is None:
+            return
+
+        name = str(cells[3]["text"]).strip().split("估算图", 1)[0].strip()
+        self.items[code] = {
+            "fundcode": code,
+            "name": name,
+            "gsz": estimated_nav,
+            "dwjz": previous_nav or 0,
+            "gszzl": estimated_rate,
+            "gztime": f"{self.calculation_date} 参考估值",
+            "estimateSource": "天天基金指数参考估值",
+        }
+
+
+def parse_index_estimate_page(
+    source: str,
+    expected_date: str | None = None,
+) -> tuple[dict[str, dict[str, Any]], int]:
+    parser = _IndexEstimatePageParser()
+    parser.feed(source)
+    if expected_date and parser.calculation_date != expected_date:
+        return {}, 0
+
+    page_numbers = [
+        int(value)
+        for value in re.findall(r"lof_fundguzhi(\d+)\.html", source)
+        if int(value) in INDEX_ESTIMATE_CATEGORY_PAGES
+    ]
+    page_count = max(page_numbers, default=1)
+    return parser.items, page_count
+
+
+def fetch_index_estimates(now: datetime | None = None) -> dict[str, dict[str, Any]]:
+    today = bj_now(now).strftime("%Y-%m-%d")
+    if (
+        _index_estimate_cache["date"] == today
+        and time.monotonic() < float(_index_estimate_cache["expiresAt"])
+    ):
+        return dict(_index_estimate_cache["items"])
+
+    headers = {"Referer": "https://fund.eastmoney.com/fundguzhi.html"}
+
+    def fetch_page(page: int) -> tuple[dict[str, dict[str, Any]], int]:
+        source = fetch_text(
+            EASTMONEY_INDEX_ESTIMATE_PAGE_URL.format(page=page),
+            headers=headers,
+            encoding="gb18030",
+        )
+        return parse_index_estimate_page(source, today)
+
+    estimates: dict[str, dict[str, Any]] = {}
+    with ThreadPoolExecutor(max_workers=len(INDEX_ESTIMATE_CATEGORY_PAGES)) as executor:
+        futures = [executor.submit(fetch_page, page) for page in INDEX_ESTIMATE_CATEGORY_PAGES]
+        for future in as_completed(futures):
+            try:
+                page_items, _ = future.result()
+            except (OSError, URLError, TimeoutError):
+                continue
+            estimates.update(page_items)
+
+    if not estimates:
+        return {}
+
+    _index_estimate_cache.update({
+        "date": today,
+        "expiresAt": time.monotonic() + INDEX_ESTIMATE_CACHE_SECONDS,
+        "items": estimates,
+    })
+    return dict(estimates)
 
 
 def fetch_history(code: str) -> dict[str, Any] | None:
@@ -193,7 +408,27 @@ def fetch_recent_history(code: str) -> dict[str, Any] | None:
         "isMoneyFund": is_money_fund,
         "millionIncome": latest_value if is_money_fund else 0,
         "prevMillionIncome": previous_value if is_money_fund else 0,
+        "fundType": str(data.get("FundType") or "").strip(),
+        "features": [
+            item.strip()
+            for item in str(data.get("Feature") or "").split(",")
+            if item.strip()
+        ],
     }
+
+
+def supports_realtime_estimate(history: dict[str, Any] | None) -> bool:
+    if not history:
+        return True
+    if history.get("isMoneyFund"):
+        return False
+
+    fund_type = str(history.get("fundType") or "")
+    features = {str(item) for item in (history.get("features") or [])}
+    if not fund_type and not features:
+        return True
+    index_features = {"050", "051", "052", "053", "054", "055"}
+    return fund_type in {"001", "006", "007"} or bool(features & index_features)
 
 
 def fetch_latest_nav(code: str) -> float | None:
@@ -277,6 +512,7 @@ def build_snapshot_item(
             "gztime": time_str,
             "isActual": is_actual,
             "isBackup": not bool(rt),
+            "estimateSource": str((rt or {}).get("estimateSource") or "") if not is_actual else "",
             "isUnavailable": False,
             "valid": True,
         }
@@ -296,6 +532,7 @@ def build_snapshot_item(
             "gztime": str(rt.get("gztime") or ""),
             "isActual": False,
             "isBackup": False,
+            "estimateSource": str(rt.get("estimateSource") or ""),
             "isUnavailable": False,
             "valid": True,
         }
@@ -313,28 +550,38 @@ def build_snapshot_item(
 
 
 def refresh_funds_snapshot(funds: list[dict[str, Any]]) -> list[dict[str, Any] | None]:
-    def refresh_one(index: int, fund: dict[str, Any]) -> tuple[int, dict[str, Any] | None]:
+    def refresh_one(
+        index: int,
+        fund: dict[str, Any],
+    ) -> tuple[int, dict[str, Any], dict[str, Any] | None, dict[str, Any] | None]:
         code = str(fund.get("code", "")).strip()
         if not re.fullmatch(r"\d{6}", code):
-            return index, None
+            return index, fund, None, None
 
         hist = fetch_recent_history(code) or fetch_history(code)
-        rt = fetch_realtime_estimate(code)
-        return index, build_snapshot_item(fund, hist, rt)
+        rt = fetch_realtime_estimate(code) if supports_realtime_estimate(hist) else None
+        return index, fund, hist, rt
 
     snapshot: list[dict[str, Any] | None] = [None] * len(funds)
     if not funds:
         return snapshot
 
     workers = max(1, min(MAX_REFRESH_WORKERS, len(funds)))
-    with ThreadPoolExecutor(max_workers=workers) as executor:
+    refreshed: list[tuple[int, dict[str, Any], dict[str, Any] | None, dict[str, Any] | None]] = []
+    with ThreadPoolExecutor(max_workers=workers + 1) as executor:
+        index_estimates_future = executor.submit(fetch_index_estimates)
         futures = [
             executor.submit(refresh_one, index, fund)
             for index, fund in enumerate(funds)
         ]
         for future in as_completed(futures):
-            index, item = future.result()
-            snapshot[index] = item
+            refreshed.append(future.result())
+        index_estimates = index_estimates_future.result()
+
+    for index, fund, hist, realtime in refreshed:
+        code = str(fund.get("code", "")).strip()
+        estimate = realtime or index_estimates.get(code)
+        snapshot[index] = build_snapshot_item(fund, hist, estimate)
 
     return snapshot
 

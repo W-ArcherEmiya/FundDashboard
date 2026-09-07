@@ -111,6 +111,9 @@
             case 'delete-fund':
                 app.ui.deleteFund();
                 break;
+            case 'clear-current-group':
+                app.ui.clearCurrentGroup();
+                break;
         }
 
     });

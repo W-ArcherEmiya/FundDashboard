@@ -325,6 +325,7 @@ def validate_sync_snapshot(value, funds_data):
             'isUnavailable': bool(item.get('isUnavailable', False)),
             'isRefreshFallback': bool(item.get('isRefreshFallback', False)),
             'isSyncSnapshot': True,
+            'estimateSource': str(item.get('estimateSource', '')).strip()[:40],
         }
 
         for field in ('estRate', 'estNav', 'dailyProfit', 'holdProfit', 'totalAsset'):
