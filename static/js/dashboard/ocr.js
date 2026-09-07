@@ -242,6 +242,13 @@
         return fundCatalogPromise;
     }
 
+    async function lookupFundByCode(code) {
+        const normalizedCode = String(code || '').trim();
+        if (!/^\d{6}$/.test(normalizedCode)) return null;
+        const catalog = await loadFundCatalog();
+        return catalog.find(item => item.code === normalizedCode) || null;
+    }
+
     function findFundCandidates(text, catalog, ocrBlocks) {
         const structuredRows = extractHoldingRowsFromBlocks(ocrBlocks);
         if (structuredRows.length > 0) {
@@ -1484,6 +1491,7 @@
         findFundCandidates,
         fetchLatestNav,
         fetchLatestNavBatch,
+        lookupFundByCode,
         recognizeAlipayScreenshot,
         recognizeServerScreenshot,
         recognizeBestAlipayScreenshot

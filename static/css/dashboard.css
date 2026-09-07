@@ -3197,3 +3197,269 @@ button {
         text-align: left;
     }
 }
+
+.page-shell-watchlist {
+    display: grid;
+    gap: 16px;
+}
+
+.watchlist-toolbar {
+    min-height: 52px;
+    padding: 0 4px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.watchlist-toolbar > div {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    min-width: 0;
+}
+
+.watchlist-refresh-btn,
+.watchlist-remove-btn,
+.watchlist-search-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    color: var(--lark-text-body);
+    background: transparent;
+}
+
+.watchlist-refresh-btn {
+    width: 36px;
+    height: 36px;
+    border: 1px solid var(--divider);
+    border-radius: 8px;
+    background: #FFFFFF;
+    color: var(--lark-blue);
+    font-size: 16px;
+}
+
+.watchlist-panel {
+    overflow: hidden;
+}
+
+.watchlist-fund-list-head,
+.watchlist-fund-list-row {
+    display: grid;
+    grid-template-columns: minmax(260px, 1.7fr) minmax(280px, 1.8fr);
+    gap: 14px;
+    align-items: center;
+    min-width: 620px;
+    padding-right: 58px;
+}
+
+.watchlist-fund-list-row {
+    position: relative;
+    cursor: default;
+}
+
+.watchlist-fund-list-metrics {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+    align-items: center;
+    min-width: 0;
+}
+
+.watchlist-fund-list-row-loading {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.watchlist-fund-list-row-loading .fund-list-main {
+    grid-column: 1 / -1;
+}
+
+.watchlist-remove-btn {
+    position: absolute;
+    top: 50%;
+    right: 16px;
+    transform: translateY(-50%);
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    color: var(--lark-text-meta);
+}
+
+.watchlist-remove-btn:hover,
+.watchlist-remove-btn:focus-visible,
+.watchlist-refresh-btn:hover,
+.watchlist-refresh-btn:focus-visible {
+    background: var(--lark-blue-soft);
+    color: var(--lark-blue);
+}
+
+.watchlist-empty {
+    min-height: 240px;
+    display: grid;
+    place-content: center;
+    justify-items: center;
+    gap: 12px;
+    color: var(--lark-text-meta);
+}
+
+.watchlist-empty i {
+    font-size: 28px;
+    color: var(--lark-blue);
+}
+
+.watchlist-search-form {
+    display: grid;
+}
+
+.watchlist-search-control {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 42px;
+    gap: 8px;
+}
+
+.watchlist-search-btn {
+    width: 42px;
+    height: 42px;
+    border-radius: 8px;
+    background: var(--lark-blue);
+    color: #FFFFFF;
+    font-size: 16px;
+}
+
+.watchlist-search-btn:hover,
+.watchlist-search-btn:focus-visible {
+    background: #245BDB;
+}
+
+.watchlist-search-status {
+    min-height: 22px;
+    padding-top: 8px;
+    color: #C43C3C;
+    font-size: 13px;
+}
+
+.watchlist-search-result {
+    margin-top: 8px;
+    padding: 16px;
+    border: 1px solid var(--divider);
+    border-radius: 8px;
+    background: #FFFFFF;
+}
+
+.watchlist-search-result-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.watchlist-search-name {
+    color: var(--lark-text-title);
+    font-size: 16px;
+    font-weight: 700;
+    line-height: 22px;
+}
+
+.watchlist-code {
+    color: var(--lark-text-meta);
+    font-size: 12px;
+    line-height: 18px;
+}
+
+.watchlist-add-btn {
+    flex: 0 0 auto;
+    min-height: 36px;
+    padding: 0 14px;
+    border: 0;
+    border-radius: 8px;
+    background: var(--lark-blue);
+    color: #FFFFFF;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.watchlist-add-btn:disabled {
+    background: #EFF1F3;
+    color: var(--lark-text-meta);
+}
+
+.watchlist-search-quotes {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    margin-top: 16px;
+}
+
+.watchlist-search-quotes > div {
+    display: grid;
+    gap: 4px;
+    padding: 12px;
+    border-radius: 8px;
+    background: var(--lark-bg);
+}
+
+.watchlist-search-quotes span,
+.watchlist-search-quotes small {
+    color: var(--lark-text-meta);
+    font-size: 12px;
+}
+
+.watchlist-search-quotes strong {
+    color: var(--lark-text-title);
+    font-size: 18px;
+    line-height: 24px;
+}
+
+@media (max-width: 767.98px) {
+    .page-shell-watchlist {
+        gap: 12px;
+    }
+
+    .watchlist-toolbar {
+        min-height: 40px;
+        padding: 0 2px;
+    }
+
+    .watchlist-toolbar .group-list-title {
+        font-size: 18px;
+    }
+
+    .watchlist-panel {
+        border-radius: 16px;
+        box-shadow: none;
+    }
+
+    .watchlist-fund-list-head,
+    .watchlist-fund-list-row {
+        grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+        gap: 8px;
+        min-width: 0;
+        padding-right: 38px;
+    }
+
+    .watchlist-fund-list-head {
+        padding-right: 38px;
+    }
+
+    .watchlist-fund-list-metrics {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 4px;
+    }
+
+    .watchlist-remove-btn {
+        right: 4px;
+        width: 28px;
+        height: 28px;
+    }
+
+    .watchlist-search-modal .modal-dialog {
+        align-items: flex-end;
+        min-height: 100%;
+        margin: 0;
+    }
+
+    .watchlist-search-modal .modal-content {
+        border-radius: 16px 16px 0 0;
+    }
+}

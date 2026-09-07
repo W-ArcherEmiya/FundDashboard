@@ -270,12 +270,18 @@ def validate_funds_data(value):
                 return None, f"第 {index + 1} 条资产成本不能为负数"
             cost_raw = str(cost)
 
-        normalized.append({
+        normalized_item = {
             'code': code,
             'shares': str(shares),
             'cost': cost_raw,
             'group': group,
-        })
+        }
+        if item.get('watchlist') is True:
+            normalized_item['watchlist'] = True
+        name = str(item.get('name', '')).strip()[:80]
+        if name:
+            normalized_item['name'] = name
+        normalized.append(normalized_item)
 
     return normalized, None
 
@@ -328,10 +334,24 @@ def validate_sync_snapshot(value, funds_data):
             'estimateSource': str(item.get('estimateSource', '')).strip()[:40],
         }
 
-        for field in ('estRate', 'estNav', 'dailyProfit', 'holdProfit', 'totalAsset'):
+        for field in (
+            'estRate',
+            'estNav',
+            'dailyProfit',
+            'holdProfit',
+            'totalAsset',
+            'actualNav',
+            'estimateNav',
+            'estimateRate',
+        ):
             number = normalize_snapshot_number(item.get(field))
             if number is not None:
                 snapshot[field] = number
+
+        for field in ('actualNavTime', 'estimateTime'):
+            text = str(item.get(field, '')).strip()[:40]
+            if text:
+                snapshot[field] = text
 
         if not snapshot['isUnavailable'] and not all(field in snapshot for field in SYNC_SNAPSHOT_METRIC_FIELDS):
             normalized.append(None)

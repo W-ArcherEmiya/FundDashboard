@@ -89,6 +89,30 @@
     </div>
 </div>
 
+<div class="modal fade watchlist-search-modal" id="watchlistModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg modal-shell">
+            <div class="modal-header border-bottom-0 pt-4 px-4">
+                <h5 class="modal-title fw-bold modal-title-main">添加自选基金</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body px-4 pb-4">
+                <form id="watchlistSearchForm" class="watchlist-search-form">
+                    <label class="form-label form-label-soft" for="watchlistCodeInput">基金代码</label>
+                    <div class="watchlist-search-control">
+                        <input type="tel" inputmode="numeric" pattern="[0-9]*" maxlength="6" class="form-control" id="watchlistCodeInput" placeholder="输入 6 位基金代码" autocomplete="off">
+                        <button type="submit" class="watchlist-search-btn" data-action="search-watchlist" aria-label="搜索基金" title="搜索基金">
+                            <i class="bi bi-search" aria-hidden="true"></i>
+                        </button>
+                    </div>
+                </form>
+                <div class="watchlist-search-status" id="watchlistSearchStatus" aria-live="polite"></div>
+                <div class="watchlist-search-result d-none" id="watchlistSearchResult"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <div class="modal fade" id="importModal" tabindex="-1" data-view="upload">
     <div class="modal-dialog modal-dialog-centered modal-lg">
         <div class="modal-content border-0 shadow-lg modal-shell">
