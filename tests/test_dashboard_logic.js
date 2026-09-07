@@ -169,6 +169,20 @@ runTest('normalizeActiveTab falls back to summary when active group is missing',
     });
 });
 
+runTest('watchlist tab is fixed and watchlist-only funds do not create holding groups', () => {
+    const funds = [
+        { code: '000001', shares: '100', group: '稳健' },
+        { code: '000002', shares: '0', group: '默认分组', watchlist: true }
+    ];
+
+    assert.deepEqual(logic.getGroups(funds), ['稳健']);
+    assert.equal(logic.getHoldingFunds(funds).length, 1);
+    assert.deepEqual(logic.normalizeActiveTab(logic.WATCHLIST_TAB_ID, ['稳健']), {
+        activeTabId: logic.WATCHLIST_TAB_ID,
+        currentActiveGroup: null
+    });
+});
+
 runTest('buildDisplayData returns loading placeholders when cache is not ready', () => {
     const myFunds = [{ code: '000001', group: '稳健' }];
     const displayData = logic.buildDisplayData(myFunds, [], false);
@@ -270,6 +284,36 @@ runTest('removeFundsByGroup removes only the current group and keeps caches alig
     assert.deepEqual(result.funds, [{ code: '000002', group: '高风险' }]);
     assert.deepEqual(result.cachedResults, [{ code: '000002', totalAsset: 200 }]);
     assert.deepEqual(result.syncSnapshotOverrides, { '000002': { totalAsset: 202 } });
+});
+
+runTest('clearing a holding group keeps watchlisted funds without a position', () => {
+    const result = logic.removeFundsByGroup(
+        [{ code: '000001', shares: '100', cost: '1.2', group: '稳健', watchlist: true }],
+        [{ code: '000001', group: '稳健', estNav: 1.3 }],
+        {},
+        '稳健'
+    );
+
+    assert.equal(result.removedCount, 1);
+    assert.deepEqual(result.funds, [{
+        code: '000001',
+        shares: '0',
+        cost: '',
+        group: '默认分组',
+        watchlist: true
+    }]);
+    assert.equal(result.cachedResults[0].group, '默认分组');
+});
+
+runTest('watchlist-only funds are excluded from portfolio totals', () => {
+    const summary = logic.summarizeDisplayData([
+        { code: '000001', shares: '100', valid: true, estNav: 1.2, dailyProfit: 2, holdProfit: 20, totalAsset: 120, gztime: 'today' },
+        { code: '000002', shares: '0', watchlist: true, valid: true, estNav: 3.4, dailyProfit: 0, holdProfit: 0, totalAsset: 0, gztime: 'today' }
+    ]);
+
+    assert.equal(summary.totalAssets, 120);
+    assert.equal(summary.totalDaily, 2);
+    assert.equal(summary.totalHold, 20);
 });
 
 runTest('summarizeDisplayData aggregates totals and group profit', () => {

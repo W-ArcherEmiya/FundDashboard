@@ -77,8 +77,20 @@
                 estimateSource: String(result.estimateSource || '')
             };
 
-            ['estRate', 'estNav', 'dailyProfit', 'holdProfit', 'totalAsset'].forEach(field => {
+            [
+                'estRate',
+                'estNav',
+                'dailyProfit',
+                'holdProfit',
+                'totalAsset',
+                'actualNav',
+                'estimateNav',
+                'estimateRate'
+            ].forEach(field => {
                 if (Number.isFinite(result[field])) snapshot[field] = result[field];
+            });
+            ['actualNavTime', 'estimateTime'].forEach(field => {
+                if (result[field]) snapshot[field] = String(result[field]);
             });
 
             return snapshot;
@@ -278,7 +290,9 @@
     }
 
     function buildExportRows() {
-        return (state.myFunds || []).map((fund, index) => {
+        return (state.myFunds || []).map((fund, index) => ({ fund, index }))
+            .filter(({ fund }) => !logic.isWatchlistOnlyFund(fund))
+            .map(({ fund, index }) => {
             const result = (state.cachedResults || [])[index] || {};
             return {
                 code: fund.code || result.code || '',
@@ -292,7 +306,7 @@
                 holdProfit: Number.isFinite(result.holdProfit) ? result.holdProfit : '',
                 navTime: result.gztime || ''
             };
-        });
+            });
     }
 
     async function exportAnalysisCsv() {

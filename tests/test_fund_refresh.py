@@ -170,6 +170,9 @@ class FundRefreshTests(unittest.TestCase):
         self.assertTrue(item['valid'])
         self.assertFalse(item['isActual'])
         self.assertEqual(item['estNav'], 1.15)
+        self.assertEqual(item['actualNav'], 1.1)
+        self.assertEqual(item['estimateNav'], 1.15)
+        self.assertEqual(item['estimateRate'], 4.55)
         self.assertAlmostEqual(item['dailyProfit'], 0.5)
         self.assertAlmostEqual(item['holdProfit'], -1)
 

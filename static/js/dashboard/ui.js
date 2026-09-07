@@ -71,7 +71,8 @@
     function renderMobileTabs(groups) {
         let tabsHtml = `
             <nav class="mobile-tabs" aria-label="分组切换">
-                <button class="mobile-tab ${state.activeTabId === 'tab-summary' ? 'active' : ''}" data-action="switch-tab" data-tab-id="tab-summary">概览</button>`;
+                <button class="mobile-tab ${state.activeTabId === 'tab-summary' ? 'active' : ''}" data-action="switch-tab" data-tab-id="tab-summary">概览</button>
+                <button class="mobile-tab ${state.activeTabId === logic.WATCHLIST_TAB_ID ? 'active' : ''}" data-action="switch-tab" data-tab-id="${logic.WATCHLIST_TAB_ID}">自选</button>`;
 
         groups.forEach((group, index) => {
             const tabId = `tab-group-${index}`;
@@ -87,7 +88,7 @@
         if (!nav) return;
 
         const inSummary = state.activeTabId === 'tab-summary';
-        const inGroup = !inSummary;
+        const inGroup = String(state.activeTabId).startsWith('tab-group-');
         nav.innerHTML = `
             <button class="mobile-nav-item ${inSummary ? 'active' : ''}" data-action="switch-tab" data-tab-id="tab-summary">
                 <span class="mobile-nav-icon" aria-hidden="true">${renderIcon('overview')}</span>
@@ -120,6 +121,11 @@
                 <button class="nav-link ${state.activeTabId === 'tab-summary' ? 'active' : ''}" data-action="switch-tab" data-tab-id="tab-summary">
                     <span class="nav-link-text">概览</span>
                 </button>
+            </li>
+            <li class="nav-item">
+                <button class="nav-link ${state.activeTabId === logic.WATCHLIST_TAB_ID ? 'active' : ''}" data-action="switch-tab" data-tab-id="${logic.WATCHLIST_TAB_ID}">
+                    <span class="nav-link-text">自选</span>
+                </button>
             </li>`;
 
         groups.forEach((group, index) => {
@@ -142,13 +148,21 @@
         const fab = document.querySelector('.fab-btn');
         if (!fab) return;
 
-        const groupName = state.activeTabId !== 'tab-summary' ? state.currentActiveGroup : '';
-        fab.classList.toggle('fab-btn-visible', Boolean(groupName));
-        if (groupName) {
+        const inWatchlist = state.activeTabId === logic.WATCHLIST_TAB_ID;
+        const groupName = state.currentActiveGroup || '';
+        fab.classList.toggle('fab-btn-visible', inWatchlist || Boolean(groupName));
+        if (inWatchlist) {
+            fab.dataset.action = 'open-watchlist-search';
+            delete fab.dataset.defaultGroup;
+            fab.setAttribute('aria-label', '添加自选基金');
+            fab.title = '添加自选基金';
+        } else if (groupName) {
+            fab.dataset.action = 'open-add';
             fab.dataset.defaultGroup = groupName;
             fab.setAttribute('aria-label', `添加基金到${groupName}`);
             fab.title = `添加到${groupName}`;
         } else {
+            fab.dataset.action = 'open-add';
             delete fab.dataset.defaultGroup;
             fab.setAttribute('aria-label', '添加基金');
             fab.title = '添加基金';
@@ -177,12 +191,17 @@
         if (state.activeTabId === 'tab-summary') {
             return renderSummaryTab(displayData, groups);
         }
+        if (state.activeTabId === logic.WATCHLIST_TAB_ID) {
+            return renderWatchlistTab(displayData, groups, isLoading);
+        }
 
         return renderGroupTab(displayData, groups);
     }
 
     function renderSummaryTab(displayData, groups) {
-        if (state.myFunds.length === 0) {
+        const holdingDisplayData = displayData.filter(item => !logic.isWatchlistOnlyFund(item));
+        const holdingCount = logic.getHoldingFunds(state.myFunds).length;
+        if (holdingCount === 0) {
             const savedSyncCode = localStorage.getItem('lastSyncCode');
             const restoreAction = savedSyncCode
                 ? `<button class="action-btn action-btn-secondary" data-action="restore-sync">从云端恢复</button>`
@@ -190,6 +209,7 @@
 
             return `
                 <section class="page-shell page-shell-summary">
+                    ${renderMobileTabs(groups)}
                     <div class="panel empty-state">
                         <div class="empty-illustration" aria-hidden="true">
                             <span class="empty-illustration-card"></span>
@@ -208,12 +228,12 @@
                 </section>`;
         }
 
-        const { totalDaily, totalHold, totalAssets, lastTime, groupStats } = logic.summarizeDisplayData(displayData);
-        const distribution = buildAssetDistribution(displayData);
-        const settledCount = displayData.filter(item => logic.hasCompleteDisplayMetrics(item)).length;
-        const unavailableCount = displayData.filter(item => item.isUnavailable).length;
+        const { totalDaily, totalHold, totalAssets, lastTime, groupStats } = logic.summarizeDisplayData(holdingDisplayData);
+        const distribution = buildAssetDistribution(holdingDisplayData);
+        const settledCount = holdingDisplayData.filter(item => logic.hasCompleteDisplayMetrics(item)).length;
+        const unavailableCount = holdingDisplayData.filter(item => item.isUnavailable).length;
         const resolvedCount = settledCount + unavailableCount;
-        const groupRows = renderSummaryGroupFolds(displayData, distribution, groupStats);
+        const groupRows = renderSummaryGroupFolds(holdingDisplayData, distribution, groupStats);
 
         const stripSegments = distribution.map((item, index) => {
             const tone = DISTRIBUTION_TONES[index % DISTRIBUTION_TONES.length];
@@ -223,7 +243,7 @@
         const syncHint = localStorage.getItem('lastSyncCode')
             ? '本机已记住同步码，可直接恢复云端数据。'
             : '当前设备还没有保存同步码。';
-        const isFullySettled = settledCount === displayData.length;
+        const isFullySettled = settledCount === holdingDisplayData.length;
         const settledStatusText = isFullySettled
             ? '已完成本轮计算'
             : (resolvedCount === displayData.length ? `${unavailableCount} 项净值暂不可用` : '正在补齐净值');
@@ -248,7 +268,7 @@
                                 <div class="summary-status ${isFullySettled ? 'summary-status-ready' : 'summary-status-loading'}">
                                     ${settledStatusText}
                                 </div>
-                                <div class="summary-status-meta">${state.myFunds.length} 项持仓 | ${settledCount} 项已计算</div>
+                                <div class="summary-status-meta">${holdingCount} 项持仓 | ${settledCount} 项已计算</div>
                                 <div class="summary-status-meta">${utils.escapeHtml(marketTimeText)}</div>
                             </div>
                         </div>
@@ -307,11 +327,11 @@
                         <div class="fact-list">
                             <div class="fact-item">
                                 <span class="fact-label">持仓数量</span>
-                                <span class="fact-value">${state.myFunds.length}</span>
+                                <span class="fact-value">${holdingCount}</span>
                             </div>
                             <div class="fact-item">
                                 <span class="fact-label">已完成计算</span>
-                                <span class="fact-value">${settledCount}/${displayData.length}</span>
+                                <span class="fact-value">${settledCount}/${holdingDisplayData.length}</span>
                             </div>
                             <div class="fact-item">
                                 <span class="fact-label">暂无估算</span>
@@ -387,6 +407,104 @@
                     </div>
                 </details>`;
         }).join('');
+    }
+
+    function getWatchlistQuote(item) {
+        const actualNav = Number(item.actualNav);
+        const estimateNav = Number(item.estimateNav);
+        const estimateRate = Number(item.estimateRate);
+        return {
+            actualNav: Number.isFinite(actualNav) && actualNav > 0
+                ? actualNav
+                : (item.isActual && Number(item.estNav) > 0 ? Number(item.estNav) : null),
+            actualNavTime: String(item.actualNavTime || (item.isActual ? item.gztime : '') || ''),
+            estimateNav: Number.isFinite(estimateNav) && estimateNav > 0
+                ? estimateNav
+                : (!item.isActual && Number(item.estNav) > 0 ? Number(item.estNav) : null),
+            estimateRate: Number.isFinite(estimateRate)
+                ? estimateRate
+                : (!item.isActual && Number.isFinite(Number(item.estRate)) ? Number(item.estRate) : null),
+            estimateTime: String(item.estimateTime || (!item.isActual ? item.gztime : '') || '')
+        };
+    }
+
+    function renderWatchlistItem(item) {
+        if (item.isLoading) {
+            return `
+                <article class="fund-list-row fund-list-row-loading watchlist-fund-list-row watchlist-fund-list-row-loading">
+                    <div class="fund-list-main">
+                        <span class="spinner-border spinner-border-sm text-primary"></span>
+                        <span>正在获取 ${utils.escapeHtml(item.code)} 的净值</span>
+                    </div>
+                </article>`;
+        }
+
+        const quote = getWatchlistQuote(item);
+        const name = item.name || `基金 ${item.code}`;
+        const rateClass = quote.estimateRate === null ? '' : utils.getColorClass(quote.estimateRate);
+        const rateText = quote.estimateRate === null ? '暂无盘中估值' : `${utils.formatNumber(quote.estimateRate, true)}%`;
+        const actualText = quote.actualNav === null ? '--' : quote.actualNav.toFixed(4);
+        const estimateText = quote.estimateNav === null ? '--' : quote.estimateNav.toFixed(4);
+
+        return `
+            <article class="fund-list-row watchlist-fund-list-row ${item.isUnavailable ? 'fund-list-row-unavailable' : ''}">
+                <div class="fund-list-main">
+                    <div>
+                        <div class="fund-card-title">${utils.escapeHtml(name)}</div>
+                        <div class="fund-list-total">基金代码 ${utils.escapeHtml(item.code)}</div>
+                    </div>
+                </div>
+                <div class="fund-list-metrics watchlist-fund-list-metrics">
+                    <div class="fund-list-cell">
+                        <span class="fund-list-label">实际净值</span>
+                        <span class="fund-list-value">${actualText}</span>
+                        <span class="status-pill status-pill-flat fund-list-rate">${utils.escapeHtml(quote.actualNavTime || '暂无数据')}</span>
+                    </div>
+                    <div class="fund-list-cell">
+                        <span class="fund-list-label">盘中估值</span>
+                        <span class="fund-list-value">${estimateText}</span>
+                        <span class="status-pill fund-list-rate ${rateClass ? `status-pill-${quote.estimateRate > 0 ? 'up' : (quote.estimateRate < 0 ? 'down' : 'flat')}` : 'status-pill-flat'}">${utils.escapeHtml(rateText)}</span>
+                    </div>
+                </div>
+                <button type="button" class="watchlist-remove-btn" data-action="remove-watchlist" data-code="${utils.escapeHtml(item.code)}" aria-label="从自选移除 ${utils.escapeHtml(name)}" title="从自选移除">
+                    <i class="bi bi-x-lg" aria-hidden="true"></i>
+                </button>
+            </article>`;
+    }
+
+    function renderWatchlistTab(displayData, groups) {
+        const items = displayData.filter(item => item.watchlist);
+        const itemsHtml = items.map(renderWatchlistItem).join('');
+
+        return `
+            <section class="page-shell page-shell-watchlist">
+                ${renderMobileTabs(groups)}
+                <div class="watchlist-toolbar">
+                    <div>
+                        <h2 class="group-list-title">自选</h2>
+                        <span class="group-list-count">${items.length} 只基金</span>
+                    </div>
+                    <button type="button" class="watchlist-refresh-btn" data-action="refresh-data" aria-label="刷新自选净值" title="刷新自选净值">
+                        <i class="bi bi-arrow-clockwise" aria-hidden="true"></i>
+                    </button>
+                </div>
+                <div class="panel fund-list-panel watchlist-panel">
+                    <div class="fund-list-head watchlist-fund-list-head">
+                        <div class="fund-list-head-main">基金</div>
+                        <div class="fund-list-head-metrics watchlist-fund-list-metrics">
+                            <div class="fund-head-sort">实际净值</div>
+                            <div class="fund-head-sort">盘中估值</div>
+                        </div>
+                    </div>
+                    <div class="fund-list watchlist-list">
+                        ${itemsHtml || `
+                            <div class="watchlist-empty">
+                                <i class="bi bi-star" aria-hidden="true"></i>
+                                <div class="empty-state-title">暂无自选基金</div>
+                            </div>`}
+                    </div>
+                </div>
+            </section>`;
     }
 
     function renderGroupTab(displayData, groups) {
@@ -593,6 +711,7 @@
         const totals = new Map();
 
         (displayData || []).forEach(item => {
+            if (logic.isWatchlistOnlyFund(item)) return;
             if (!logic.hasCompleteDisplayMetrics(item)) return;
 
             const groupName = item.group || '默认分组';
@@ -619,6 +738,172 @@
         document.getElementById('btnDelete').classList.add('d-none');
         updateDropdownList();
         state.addModal.show();
+    }
+
+    function resetWatchlistSearch() {
+        state.watchlistSearchResult = null;
+        state.watchlistSearchInFlight = false;
+        const input = document.getElementById('watchlistCodeInput');
+        const status = document.getElementById('watchlistSearchStatus');
+        const result = document.getElementById('watchlistSearchResult');
+        if (input) input.value = '';
+        if (status) status.textContent = '';
+        if (result) {
+            result.innerHTML = '';
+            result.classList.add('d-none');
+        }
+    }
+
+    function openWatchlistSearch() {
+        resetWatchlistSearch();
+        state.watchlistModal.show();
+        const input = document.getElementById('watchlistCodeInput');
+        setTimeout(() => input && input.focus(), 180);
+    }
+
+    function renderWatchlistSearchResult(item) {
+        const result = document.getElementById('watchlistSearchResult');
+        if (!result) return;
+
+        const quote = getWatchlistQuote(item);
+        const alreadyAdded = state.myFunds.some(fund => fund.code === item.code && fund.watchlist);
+        const estimateRate = quote.estimateRate === null
+            ? '暂无盘中估值'
+            : `${utils.formatNumber(quote.estimateRate, true)}%`;
+        result.innerHTML = `
+            <div class="watchlist-search-result-head">
+                <div>
+                    <div class="watchlist-search-name">${utils.escapeHtml(item.name || `基金 ${item.code}`)}</div>
+                    <div class="watchlist-code">${utils.escapeHtml(item.code)}</div>
+                </div>
+                <button type="button" class="watchlist-add-btn" data-action="add-watchlist" ${alreadyAdded ? 'disabled' : ''}>
+                    ${alreadyAdded ? '已在自选' : '加入自选'}
+                </button>
+            </div>
+            <div class="watchlist-search-quotes">
+                <div>
+                    <span>实际净值</span>
+                    <strong>${quote.actualNav === null ? '--' : quote.actualNav.toFixed(4)}</strong>
+                </div>
+                <div>
+                    <span>盘中估值</span>
+                    <strong>${quote.estimateNav === null ? '--' : quote.estimateNav.toFixed(4)}</strong>
+                    <small class="${quote.estimateRate === null ? '' : utils.getColorClass(quote.estimateRate)}">${utils.escapeHtml(estimateRate)}</small>
+                </div>
+            </div>`;
+        result.classList.remove('d-none');
+    }
+
+    async function searchWatchlistFund() {
+        if (state.watchlistSearchInFlight) return;
+        const input = document.getElementById('watchlistCodeInput');
+        const status = document.getElementById('watchlistSearchStatus');
+        const result = document.getElementById('watchlistSearchResult');
+        const code = String(input && input.value || '').trim();
+        if (!/^\d{6}$/.test(code)) {
+            status.textContent = '请输入正确的 6 位基金代码';
+            result.classList.add('d-none');
+            return;
+        }
+
+        state.watchlistSearchInFlight = true;
+        state.watchlistSearchResult = null;
+        status.textContent = '正在查询...';
+        result.classList.add('d-none');
+        try {
+            const [marketResponse, catalogFund] = await Promise.all([
+                fetch('/api/market/refresh', {
+                    method: 'POST',
+                    headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        funds: [{ code, shares: '0', cost: '', group: '默认分组', watchlist: true }]
+                    })
+                }).then(async response => ({ response, payload: await response.json() }))
+                    .catch(() => ({ response: null, payload: {} })),
+                app.ocr.lookupFundByCode(code).catch(() => null)
+            ]);
+            const item = Array.isArray(marketResponse.payload.snapshot)
+                ? marketResponse.payload.snapshot[0]
+                : null;
+            if ((!marketResponse.response || !marketResponse.response.ok || !marketResponse.payload.success || !item) && !catalogFund) {
+                throw new Error(marketResponse.payload.error || '未找到该基金');
+            }
+            if (item && item.valid === false && !catalogFund) throw new Error('未找到该基金');
+
+            const marketItem = item || {
+                code,
+                group: '默认分组',
+                gztime: '行情暂不可用',
+                valid: true,
+                isUnavailable: true,
+                isActual: true,
+                isBackup: true
+            };
+            const marketName = String(marketItem.name || '').trim();
+            state.watchlistSearchResult = {
+                ...marketItem,
+                name: catalogFund && (!marketName || marketName === `基金 ${code}`)
+                    ? catalogFund.name
+                    : marketName,
+                code,
+                watchlist: true,
+                shares: '0',
+                cost: ''
+            };
+            status.textContent = '';
+            renderWatchlistSearchResult(state.watchlistSearchResult);
+        } catch (error) {
+            status.textContent = error.message || '查询失败，请稍后重试';
+        } finally {
+            state.watchlistSearchInFlight = false;
+        }
+    }
+
+    function addWatchlistFund() {
+        const item = state.watchlistSearchResult;
+        if (!item || !/^\d{6}$/.test(item.code)) return;
+
+        const index = state.myFunds.findIndex(fund => fund.code === item.code);
+        if (index >= 0) {
+            if (state.myFunds[index].watchlist) return;
+            state.myFunds[index] = {
+                ...state.myFunds[index],
+                name: state.myFunds[index].name || item.name || `基金 ${item.code}`,
+                watchlist: true
+            };
+        } else {
+            state.myFunds.push({
+                code: item.code,
+                name: item.name || `基金 ${item.code}`,
+                shares: '0',
+                cost: '',
+                group: '默认分组',
+                watchlist: true
+            });
+            state.cachedResults.push(item);
+        }
+
+        app.persistFunds();
+        state.watchlistModal.hide();
+        switchTab(logic.WATCHLIST_TAB_ID);
+        showNotice(`已将 ${item.name || item.code} 加入自选`, 'success');
+        app.data.refreshNetworkData({ allowQueue: true });
+    }
+
+    function removeWatchlistFund(code) {
+        const index = state.myFunds.findIndex(fund => fund.code === code);
+        if (index < 0 || !state.myFunds[index].watchlist) return;
+
+        if (Number(state.myFunds[index].shares) > 0) {
+            state.myFunds[index] = { ...state.myFunds[index], watchlist: false };
+        } else {
+            clearSnapshotOverride(code);
+            state.myFunds.splice(index, 1);
+            state.cachedResults.splice(index, 1);
+        }
+        app.persistFunds();
+        renderUI(false);
+        showNotice('已从自选移除', 'success');
     }
 
     function openEditModal(code) {
@@ -743,11 +1028,12 @@
         candidate.nav = inferred.nav;
         candidate.suggestedShares = inferred.shares;
 
-        if (!existingFund) {
+        if (!existingFund || logic.isWatchlistOnlyFund(existingFund)) {
             candidate.shares = inferred.shares;
             candidate.cost = inferCostFromProfit(candidate.amount, candidate.holdProfit, candidate.shares);
             candidate.requiresShareReview = false;
             candidate.shareCalibrationStatus = 'new';
+            candidate.existing = Boolean(existingFund);
             return true;
         }
 
@@ -1837,7 +2123,7 @@
 
     function updateDropdownList() {
         const list = document.getElementById('groupDropdownList');
-        const groups = new Set(state.myFunds.map(fund => fund.group || '默认分组'));
+        const groups = new Set(logic.getGroups(state.myFunds));
         let html = '';
 
         if (groups.size === 0) {
@@ -1879,8 +2165,15 @@
             return;
         }
 
-        const oldCode = index >= 0 && state.myFunds[index] ? state.myFunds[index].code : '';
-        const newFund = { code, shares, cost, group };
+        const existingFund = index >= 0 ? state.myFunds[index] : null;
+        const oldCode = existingFund ? existingFund.code : '';
+        const newFund = {
+            code,
+            shares,
+            cost,
+            group,
+            ...(existingFund && existingFund.watchlist ? { watchlist: true } : {})
+        };
         if (index === -1) {
             if (state.myFunds.some(fund => fund.code === code)) {
                 showNotice('该基金代码已存在', 'error');
@@ -1904,7 +2197,18 @@
             const index = Number(document.getElementById('editIndex').value);
             const fund = state.myFunds[index];
             if (fund) clearSnapshotOverride(fund.code);
-            state.myFunds.splice(index, 1);
+            if (fund && fund.watchlist) {
+                state.myFunds[index] = {
+                    ...fund,
+                    shares: '0',
+                    cost: '',
+                    group: '默认分组',
+                    watchlist: true
+                };
+            } else {
+                state.myFunds.splice(index, 1);
+                state.cachedResults.splice(index, 1);
+            }
             app.persistFunds();
             state.addModal.hide();
             renderUI(true);
@@ -1914,7 +2218,9 @@
 
     function clearCurrentGroup() {
         const groupName = state.currentActiveGroup;
-        const groupCount = state.myFunds.filter(fund => (fund.group || '默认分组') === groupName).length;
+        const groupCount = state.myFunds.filter(fund => (
+            !logic.isWatchlistOnlyFund(fund) && (fund.group || '默认分组') === groupName
+        )).length;
         if (!groupName || groupCount === 0) {
             showNotice('当前分类没有可清空的基金', 'info');
             return;
@@ -1947,6 +2253,10 @@
         switchTab,
         switchToHoldings,
         openAddModal,
+        openWatchlistSearch,
+        searchWatchlistFund,
+        addWatchlistFund,
+        removeWatchlistFund,
         openImportModal,
         resetImportModal,
         openEditModal,

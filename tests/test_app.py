@@ -77,6 +77,20 @@ class FundDashboardAppTests(unittest.TestCase):
         self.assertIsNone(data)
         self.assertIn('资产代码无效', error)
 
+    def test_validate_funds_data_preserves_watchlist_metadata(self):
+        data, error = fund_app.validate_funds_data([{
+            'code': '006479',
+            'name': '广发纳斯达克100ETF联接C',
+            'shares': '0',
+            'cost': '',
+            'group': '默认分组',
+            'watchlist': True,
+        }])
+
+        self.assertIsNone(error)
+        self.assertEqual(data[0]['watchlist'], True)
+        self.assertEqual(data[0]['name'], '广发纳斯达克100ETF联接C')
+
     def test_market_refresh_returns_one_server_calculated_snapshot(self):
         original_refresh = fund_refresh.refresh_funds_snapshot
         refresh_calls = []

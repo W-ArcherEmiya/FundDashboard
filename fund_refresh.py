@@ -454,7 +454,7 @@ def build_snapshot_item(
     cost = to_float(fund.get("cost"))
 
     if hist and hist.get("isMoneyFund"):
-        name = str((rt or {}).get("name") or hist.get("name") or f"基金 {code}")
+        name = str((rt or {}).get("name") or hist.get("name") or fund.get("name") or f"基金 {code}")
         million_income = to_float(hist.get("millionIncome"))
         date_badge = date_ms_to_badge(hist.get("dateMs"))
         return {
@@ -467,6 +467,8 @@ def build_snapshot_item(
             "holdProfit": (1 - cost) * shares if cost > 0 else 0,
             "totalAsset": shares,
             "gztime": f"货币收益({date_badge})",
+            "actualNav": 1,
+            "actualNavTime": date_badge,
             "isActual": True,
             "isBackup": not bool(rt),
             "isUnavailable": False,
@@ -474,7 +476,7 @@ def build_snapshot_item(
         }
 
     if hist:
-        name = str((rt or {}).get("name") or hist.get("name") or f"基金 {code}")
+        name = str((rt or {}).get("name") or hist.get("name") or fund.get("name") or f"基金 {code}")
         actual_date = date_ms_to_bj_date_str(hist.get("dateMs"))
         settlement_eligible = is_same_day_settlement_eligible(actual_date, now)
         gztime = str(rt.get("gztime") or "") if rt else ""
@@ -500,7 +502,7 @@ def build_snapshot_item(
             is_actual = True
 
         hold_nav = current_nav if is_actual else to_float(hist.get("latest") if settlement_eligible else hist.get("prev"))
-        return {
+        result = {
             "code": code,
             "group": group,
             "name": name,
@@ -510,12 +512,21 @@ def build_snapshot_item(
             "holdProfit": (hold_nav - cost) * shares if cost > 0 else 0,
             "totalAsset": current_nav * shares,
             "gztime": time_str,
+            "actualNav": to_float(hist.get("latest")),
+            "actualNavTime": actual_date,
             "isActual": is_actual,
             "isBackup": not bool(rt),
             "estimateSource": str((rt or {}).get("estimateSource") or "") if not is_actual else "",
             "isUnavailable": False,
             "valid": True,
         }
+        if rt:
+            result.update({
+                "estimateNav": to_float(rt.get("gsz")),
+                "estimateRate": to_float(rt.get("gszzl")),
+                "estimateTime": str(rt.get("gztime") or ""),
+            })
+        return result
 
     if rt:
         current_nav = to_float(rt.get("gsz"))
@@ -523,13 +534,18 @@ def build_snapshot_item(
         return {
             "code": code,
             "group": group,
-            "name": str(rt.get("name") or f"基金 {code}"),
+            "name": str(rt.get("name") or fund.get("name") or f"基金 {code}"),
             "estRate": to_float(rt.get("gszzl")),
             "estNav": current_nav,
             "dailyProfit": (current_nav - previous_nav) * shares,
             "holdProfit": (previous_nav - cost) * shares if cost > 0 else 0,
             "totalAsset": current_nav * shares,
             "gztime": str(rt.get("gztime") or ""),
+            "actualNav": previous_nav,
+            "actualNavTime": "最新披露",
+            "estimateNav": current_nav,
+            "estimateRate": to_float(rt.get("gszzl")),
+            "estimateTime": str(rt.get("gztime") or ""),
             "isActual": False,
             "isBackup": False,
             "estimateSource": str(rt.get("estimateSource") or ""),
@@ -540,7 +556,7 @@ def build_snapshot_item(
     return {
         "code": code,
         "group": group,
-        "name": f"基金 {code}",
+        "name": str(fund.get("name") or f"基金 {code}"),
         "gztime": "暂无盘中估算",
         "valid": True,
         "isUnavailable": True,

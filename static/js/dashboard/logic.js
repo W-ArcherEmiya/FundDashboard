@@ -8,8 +8,18 @@
     const app = root.FundDashboard = root.FundDashboard || {};
     app.logic = logic;
 })(typeof globalThis !== 'undefined' ? globalThis : this, function() {
+    const WATCHLIST_TAB_ID = 'tab-watchlist';
+
+    function isWatchlistOnlyFund(item) {
+        return Boolean(item && item.watchlist) && !(Number(item.shares) > 0);
+    }
+
+    function getHoldingFunds(myFunds) {
+        return (myFunds || []).filter(item => !isWatchlistOnlyFund(item));
+    }
+
     function getGroups(myFunds) {
-        return [...new Set((myFunds || []).map(item => item.group || '默认分组'))];
+        return [...new Set(getHoldingFunds(myFunds).map(item => item.group || '默认分组'))];
     }
 
     function getImportCandidateReviewRank(candidate) {
@@ -214,11 +224,25 @@
         const keptFunds = [];
         const keptResults = [];
         const removedCodes = new Set();
+        let removedCount = 0;
 
         sourceFunds.forEach((fund, index) => {
             const fundGroup = fund.group || '默认分组';
             if (fundGroup === groupName) {
                 if (fund.code) removedCodes.add(fund.code);
+                removedCount += 1;
+                if (fund.watchlist) {
+                    keptFunds.push({
+                        ...fund,
+                        shares: '0',
+                        cost: '',
+                        group: '默认分组',
+                        watchlist: true
+                    });
+                    const direct = sourceResults[index];
+                    const cached = direct && direct.code === fund.code ? direct : cachedByCode.get(fund.code);
+                    keptResults.push(cached ? { ...cached, group: '默认分组' } : null);
+                }
                 return;
             }
 
@@ -234,13 +258,16 @@
             funds: keptFunds,
             cachedResults: keptResults,
             syncSnapshotOverrides: keptOverrides,
-            removedCount: sourceFunds.length - keptFunds.length
+            removedCount
         };
     }
 
     function normalizeActiveTab(activeTabId, groups) {
         if (activeTabId === 'tab-summary') {
             return { activeTabId: 'tab-summary', currentActiveGroup: null };
+        }
+        if (activeTabId === WATCHLIST_TAB_ID) {
+            return { activeTabId: WATCHLIST_TAB_ID, currentActiveGroup: null };
         }
 
         const activeGroupIndex = parseInt(String(activeTabId || '').split('-')[2], 10);
@@ -260,11 +287,20 @@
 
             const data = (cachedResults || [])[index];
             if (!data) return { ...fund, isLoading: true, valid: true };
-            if (data.error || !data.valid) return { ...fund, valid: false };
+            if (data.error || !data.valid) return { ...fund, ...data, valid: false };
             if (!data.isUnavailable && !hasCompleteDisplayMetrics(data)) {
                 return { ...fund, isLoading: true, valid: true };
             }
-            return data;
+            const fundName = String(fund.name || '').trim();
+            const dataName = String(data.name || '').trim();
+            return {
+                ...data,
+                name: fundName && (!dataName || dataName === `基金 ${fund.code}`) ? fundName : data.name,
+                shares: fund.shares,
+                cost: fund.cost,
+                group: fund.group || data.group || '默认分组',
+                watchlist: Boolean(fund.watchlist)
+            };
         });
     }
 
@@ -276,6 +312,7 @@
         let groupStats = {};
 
         (displayData || []).forEach(data => {
+            if (isWatchlistOnlyFund(data)) return;
             if (hasCompleteDisplayMetrics(data)) {
                 totalDaily += Number(data.dailyProfit);
                 totalHold += Number(data.holdProfit);
@@ -297,7 +334,9 @@
     function getCurrentGroupItems(displayData, activeTabId, groups) {
         const currentGroupIndex = parseInt(String(activeTabId || '').split('-')[2], 10);
         const currentGroupName = groups[currentGroupIndex];
-        const groupItems = (displayData || []).filter(item => (item.group || '默认分组') === currentGroupName);
+        const groupItems = (displayData || []).filter(item => (
+            !isWatchlistOnlyFund(item) && (item.group || '默认分组') === currentGroupName
+        ));
 
         return { currentGroupName, groupItems };
     }
@@ -400,13 +439,15 @@
                 return {
                     code: fund.code,
                     group: fund.group,
-                    name: rt ? rt.name : hist.name,
+                    name: rt ? rt.name : (hist.name || fund.name || `基金 ${fund.code}`),
                     estRate: 0,
                     estNav: 1,
                     dailyProfit,
                     holdProfit: cost > 0 ? (1 - cost) * shares : 0,
                     totalAsset: shares,
                     gztime: '\u8d27\u5e01\u6536\u76ca(' + badgeDate + ')',
+                    actualNav: 1,
+                    actualNavTime: formatBeijingDate(actualParts),
                     isActual: true,
                     isBackup: !rt,
                     isMoneyFund: true,
@@ -439,20 +480,28 @@
 
             const holdNav = isActual ? currentNav : (settlementEligible ? hist.latest : hist.prev);
 
-            return {
+            const result = {
                 code: fund.code,
                 group: fund.group,
-                name: rt ? rt.name : hist.name,
+                name: rt ? rt.name : (hist.name || fund.name || `基金 ${fund.code}`),
                 estRate: rate,
                 estNav: currentNav,
                 dailyProfit: (currentNav - prevNav) * shares,
                 holdProfit: cost > 0 ? (holdNav - cost) * shares : 0,
                 totalAsset: currentNav * shares,
                 gztime: timeStr,
+                actualNav: Number(hist.latest),
+                actualNavTime: actualDateStr,
                 isActual,
                 isBackup: !rt,
                 valid: true
             };
+            if (rt) {
+                result.estimateNav = Number(rt.gsz);
+                result.estimateRate = Number(rt.gszzl);
+                result.estimateTime = rt.gztime || '';
+            }
+            return result;
         }
 
         const rtNav = parseFloat(rt.gsz);
@@ -461,13 +510,18 @@
         return {
             code: fund.code,
             group: fund.group,
-            name: rt.name,
+            name: rt.name || fund.name || `基金 ${fund.code}`,
             estRate: parseFloat(rt.gszzl),
             estNav: rtNav,
             dailyProfit: (rtNav - previousNav) * shares,
             holdProfit: cost > 0 ? (previousNav - cost) * shares : 0,
             totalAsset: rtNav * shares,
             gztime: rt.gztime,
+            actualNav: previousNav,
+            actualNavTime: '最新披露',
+            estimateNav: rtNav,
+            estimateRate: Number(rt.gszzl),
+            estimateTime: rt.gztime || '',
             isActual: false,
             isBackup: false,
             valid: true
@@ -475,6 +529,9 @@
     }
 
     return {
+        WATCHLIST_TAB_ID,
+        isWatchlistOnlyFund,
+        getHoldingFunds,
         getGroups,
         getImportCandidateReviewRank,
         sortImportCandidatesForReview,

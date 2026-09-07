@@ -5,6 +5,7 @@
 
     document.addEventListener('DOMContentLoaded', async () => {
         state.addModal = new bootstrap.Modal(document.getElementById('addModal'));
+        state.watchlistModal = new bootstrap.Modal(document.getElementById('watchlistModal'));
         state.syncModal = new bootstrap.Modal(document.getElementById('syncModal'));
         state.importModal = new bootstrap.Modal(document.getElementById('importModal'));
 
@@ -30,7 +31,7 @@
         if (!actionEl) return;
 
         const { action, tabId, groupName, code, defaultGroup } = actionEl.dataset;
-        if (action === 'select-group') event.preventDefault();
+        if (action === 'select-group' || action === 'search-watchlist') event.preventDefault();
 
         switch (action) {
             case 'open-sync':
@@ -62,6 +63,18 @@
                 break;
             case 'open-add':
                 app.ui.openAddModal(defaultGroup);
+                break;
+            case 'open-watchlist-search':
+                app.ui.openWatchlistSearch();
+                break;
+            case 'search-watchlist':
+                app.ui.searchWatchlistFund();
+                break;
+            case 'add-watchlist':
+                app.ui.addWatchlistFund();
+                break;
+            case 'remove-watchlist':
+                app.ui.removeWatchlistFund(code);
                 break;
             case 'open-edit':
                 app.ui.openEditModal(code);
@@ -119,9 +132,18 @@
     });
 
     document.addEventListener('input', event => {
+        if (event.target.id === 'watchlistCodeInput') {
+            event.target.value = event.target.value.replace(/\D/g, '').slice(0, 6);
+        }
         if (event.target.classList.contains('import-shares') || event.target.classList.contains('import-cost')) {
             app.ui.handleImportEditInput();
         }
+    });
+
+    document.addEventListener('submit', event => {
+        if (event.target.id !== 'watchlistSearchForm') return;
+        event.preventDefault();
+        app.ui.searchWatchlistFund();
     });
 
     document.addEventListener('keydown', event => {
