@@ -22,6 +22,19 @@
         return [...new Set(getHoldingFunds(myFunds).map(item => item.group || '默认分组'))];
     }
 
+    function buildImportedHolding(candidate = {}) {
+        const code = String(candidate.code || '').trim();
+        const holding = {
+            code,
+            name: String(candidate.name || '').trim() || `基金 ${code}`,
+            shares: String(candidate.shares ?? '').trim(),
+            cost: String(candidate.cost ?? '').trim(),
+            group: String(candidate.group || '').trim() || '默认分组'
+        };
+        if (candidate.watchlist === true) holding.watchlist = true;
+        return holding;
+    }
+
     function resolveCandidateFromExistingHoldings(candidate, myFunds) {
         if (!candidate || candidate.code || !Array.isArray(candidate.suggestions)) return candidate;
 
@@ -214,7 +227,7 @@
 
             const result = {
                 ...(cached || {
-                    name: `基金 ${fund.code}`,
+                    name: fund.name || (override && override.name) || `基金 ${fund.code}`,
                     gztime: '截图快照',
                     valid: true,
                     isActual: true,
@@ -222,7 +235,7 @@
                     dailyProfit: 0
                 }),
                 code: fund.code,
-                group: fund.group || '默认分组'
+                group: fund.group || (override && override.group) || '默认分组'
             };
 
             if (override) {
@@ -556,6 +569,7 @@
         isWatchlistOnlyFund,
         getHoldingFunds,
         getGroups,
+        buildImportedHolding,
         resolveCandidateFromExistingHoldings,
         getImportCandidateReviewRank,
         sortImportCandidatesForReview,
