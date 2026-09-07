@@ -947,6 +947,7 @@
         state.importCandidates = [];
         state.importAutoUpdatedCount = 0;
         state.importEditingIndex = null;
+        state.importListScrollPosition = null;
         setImportView('upload');
         if (input) input.value = '';
         if (status) status.textContent = '支持批量选择基金持有页截图';
@@ -1167,8 +1168,6 @@
                 ? ''
                 : `<div class="import-row-warning">${hasCode ? '未能反推份额，请检查代码或手动填写。' : (hasSuggestions ? '存在多个相似候选，请选择正确基金。' : '无法匹配基金代码，请输入代码后重新计算份额和成本。')}</div>`);
         const matchStatus = hasCode ? utils.escapeHtml(candidate.code) : (hasSuggestions ? '待选择候选' : '无法匹配');
-        const amountText = candidate.amount ? utils.escapeHtml(candidate.amount) : '--';
-        const holdProfitText = candidate.holdProfit ? utils.escapeHtml(candidate.holdProfit) : '--';
         const group = candidate.group || getDefaultImportGroup();
         const rowClass = candidate.existing ? 'import-row-existing' : 'import-row-new';
 
@@ -1185,16 +1184,6 @@
                                 <span class="import-group-badge">${utils.escapeHtml(group)}</span>
                             </div>
                             <div class="import-row-meta">${matchStatus}</div>
-                        </div>
-                        <div class="import-row-metrics" aria-label="识别金额概览">
-                            <div class="import-row-metric">
-                                <div class="import-row-metric-label">金额</div>
-                                <div class="import-row-metric-value">${amountText}</div>
-                            </div>
-                            <div class="import-row-metric">
-                                <div class="import-row-metric-label">持有收益</div>
-                                <div class="import-row-metric-value">${holdProfitText}</div>
-                            </div>
                         </div>
                     </div>
                     ${disabledNote}
@@ -1384,7 +1373,7 @@
         results.innerHTML = `
             <div class="import-result-head">
                 <div>
-                    <div class="section-subtitle">勾选需要导入的基金；点击单行可编辑代码、份额、成本和分组。</div>
+                    <div class="section-subtitle">勾选需要导入的基金；点击单行可调整基金代码和分组。</div>
                 </div>
                 <div class="section-meta">${candidates.length} 项</div>
             </div>
@@ -1396,6 +1385,28 @@
         results.classList.remove('d-none');
         updateImportSelectAllState();
         setImportFooterState(true, true);
+    }
+
+    function captureImportListScrollPosition() {
+        const list = document.querySelector('#importResults .import-list');
+        const modalBody = document.querySelector('#importModal .modal-body');
+        state.importListScrollPosition = {
+            list: list ? list.scrollTop : 0,
+            modalBody: modalBody ? modalBody.scrollTop : 0
+        };
+    }
+
+    function restoreImportListScrollPosition() {
+        const position = state.importListScrollPosition;
+        state.importListScrollPosition = null;
+        if (!position) return;
+
+        requestAnimationFrame(() => {
+            const list = document.querySelector('#importResults .import-list');
+            const modalBody = document.querySelector('#importModal .modal-body');
+            if (list) list.scrollTop = position.list;
+            if (modalBody) modalBody.scrollTop = position.modalBody;
+        });
     }
 
     function renderImportDiagnostics(parsed) {
@@ -1869,6 +1880,7 @@
     function editImportCandidate(index) {
         syncImportRowsToState();
         if (!state.importCandidates[index]) return;
+        captureImportListScrollPosition();
         state.importEditingIndex = index;
         renderImportResults(state.importCandidates);
     }
@@ -1877,6 +1889,7 @@
         syncImportRowsToState();
         state.importEditingIndex = null;
         renderImportResults(state.importCandidates);
+        restoreImportListScrollPosition();
     }
 
     function saveImportEdit() {
@@ -1888,6 +1901,7 @@
         }
         state.importEditingIndex = null;
         renderImportResults(state.importCandidates);
+        restoreImportListScrollPosition();
     }
 
     function removeImportCandidate(index) {

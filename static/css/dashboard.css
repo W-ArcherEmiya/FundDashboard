@@ -1528,10 +1528,8 @@ button {
 }
 
 .import-row-summary {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    display: block;
     align-items: start;
-    gap: 14px;
 }
 
 .import-row-identity {
@@ -1572,28 +1570,6 @@ button {
     font-size: 11px;
     line-height: 1.2;
     white-space: nowrap;
-}
-
-.import-row-metrics {
-    display: grid;
-    grid-template-columns: minmax(84px, auto) minmax(88px, auto);
-    gap: 12px;
-    text-align: right;
-    white-space: nowrap;
-}
-
-.import-row-metric-label {
-    color: var(--lark-text-meta);
-    font-size: 11px;
-    line-height: 1.2;
-}
-
-.import-row-metric-value {
-    margin-top: 3px;
-    color: var(--lark-text-title);
-    font-size: 13px;
-    line-height: 1.25;
-    font-weight: 600;
 }
 
 .import-source-badge {
@@ -2993,8 +2969,7 @@ button {
     }
 
     .import-row-summary {
-        grid-template-columns: minmax(0, 1fr) auto;
-        gap: 8px;
+        display: block;
         align-items: start;
     }
 
@@ -3016,22 +2991,6 @@ button {
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
-    }
-
-    .import-row-metrics {
-        grid-template-columns: repeat(2, minmax(54px, auto));
-        gap: 8px;
-        text-align: right;
-        white-space: nowrap;
-    }
-
-    .import-row-metric-label {
-        display: none;
-    }
-
-    .import-row-metric-value {
-        margin-top: 0;
-        font-size: 12px;
     }
 
     .import-row-fields {

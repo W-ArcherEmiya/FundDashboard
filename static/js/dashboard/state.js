@@ -22,6 +22,7 @@
         importCandidates: [],
         importAutoUpdatedCount: 0,
         importEditingIndex: null,
+        importListScrollPosition: null,
         refreshInFlight: false,
         refreshPending: false,
         refreshPendingOptions: null,
