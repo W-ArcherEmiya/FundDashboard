@@ -5,7 +5,11 @@
 
     document.addEventListener('DOMContentLoaded', async () => {
         state.addModal = new bootstrap.Modal(document.getElementById('addModal'));
-        state.watchlistModal = new bootstrap.Modal(document.getElementById('watchlistModal'));
+        const watchlistModalEl = document.getElementById('watchlistModal');
+        state.watchlistModal = new bootstrap.Modal(watchlistModalEl);
+        watchlistModalEl.addEventListener('shown.bs.modal', () => {
+            document.getElementById('watchlistCodeInput')?.focus({ preventScroll: true });
+        });
         state.syncModal = new bootstrap.Modal(document.getElementById('syncModal'));
         state.importModal = new bootstrap.Modal(document.getElementById('importModal'));
 
@@ -94,6 +98,9 @@
             case 'apply-import-bulk-group':
                 app.ui.applyImportBulkGroup(actionEl.dataset.group);
                 break;
+            case 'apply-import-custom-group':
+                app.ui.applyImportCustomGroup();
+                break;
             case 'edit-import-row':
                 app.ui.editImportCandidate(Number(actionEl.dataset.importIndex));
                 break;
@@ -134,6 +141,10 @@
     document.addEventListener('input', event => {
         if (event.target.id === 'watchlistCodeInput') {
             event.target.value = event.target.value.replace(/\D/g, '').slice(0, 6);
+        }
+        if (event.target.id === 'importBulkCustomInput') {
+            const applyButton = document.getElementById('importBulkCustomApply');
+            if (applyButton) applyButton.disabled = !event.target.value.trim();
         }
         if (event.target.classList.contains('import-shares') || event.target.classList.contains('import-cost')) {
             app.ui.handleImportEditInput();
