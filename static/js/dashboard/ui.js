@@ -757,8 +757,6 @@
     function openWatchlistSearch() {
         resetWatchlistSearch();
         state.watchlistModal.show();
-        const input = document.getElementById('watchlistCodeInput');
-        setTimeout(() => input && input.focus(), 180);
     }
 
     function renderWatchlistSearchResult(item) {
@@ -1243,6 +1241,9 @@
                             </div>
                             <div class="import-bulk-group-custom">
                                 <input type="text" class="form-control import-bulk-custom-input" id="importBulkCustomInput" placeholder="自定义名称" maxlength="32">
+                                <button type="button" class="import-bulk-custom-apply" id="importBulkCustomApply" data-action="apply-import-custom-group" aria-label="使用此标签" title="使用此标签" disabled>
+                                    <i class="bi bi-check-lg" aria-hidden="true"></i>
+                                </button>
                             </div>
                         </div>
                     </div>

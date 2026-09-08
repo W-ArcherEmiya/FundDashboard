@@ -1399,15 +1399,47 @@ button {
 }
 
 .import-bulk-group-custom {
+    display: flex;
+    align-items: center;
+    gap: 5px;
     border-top: 1px solid var(--divider-light);
     margin-top: 6px;
     padding-top: 6px;
 }
 
 .import-bulk-custom-input {
+    flex: 1 1 auto;
+    min-width: 0;
     min-height: 32px;
     border-radius: 8px;
     font-size: 13px;
+}
+
+.import-bulk-custom-apply {
+    display: inline-flex;
+    flex: 0 0 32px;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border: 0;
+    border-radius: 8px;
+    background: var(--lark-blue);
+    color: #FFFFFF;
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.import-bulk-custom-apply:hover,
+.import-bulk-custom-apply:focus-visible {
+    background: #2563EB;
+}
+
+.import-bulk-custom-apply:disabled {
+    background: #E7EAF0;
+    color: var(--lark-text-placeholder);
+    cursor: not-allowed;
 }
 
 .import-footer-actions {
