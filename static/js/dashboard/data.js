@@ -3,6 +3,7 @@
     const { state, utils, logic } = app;
     const UPLOAD_REFRESH_WAIT_MS = 45 * 1000;
     const BROWSER_HISTORY_TIMEOUT_MS = 10 * 1000;
+    const BROWSER_ESTIMATE_TIMEOUT_MS = 8 * 1000;
     const BROWSER_REFRESH_WORKERS = 6;
     const SYNC_OVERRIDE_FIELDS = ['estRate', 'estNav', 'dailyProfit', 'totalAsset', 'holdProfit'];
 
@@ -446,6 +447,30 @@
         });
     }
 
+    async function fetchBrowserEstimate(code, timeoutMs = BROWSER_ESTIMATE_TIMEOUT_MS) {
+        const controller = new AbortController();
+        const timerId = setTimeout(() => controller.abort(), timeoutMs);
+        try {
+            const response = await fetch(
+                `https://fundcomapi.tiantianfunds.com/mm/fundTrade/FundValuationDetail?FCODE=${encodeURIComponent(code)}&_=${Date.now()}`,
+                {
+                    headers: { 'Accept': 'application/json' },
+                    cache: 'no-store',
+                    signal: controller.signal
+                }
+            );
+            if (!response.ok) return null;
+            return logic.parseRealtimeEstimatePayload(await response.json(), code);
+        } catch (error) {
+            if (error && error.name !== 'AbortError') {
+                console.warn(`browser estimate lookup failed for ${code}`, error);
+            }
+            return null;
+        } finally {
+            clearTimeout(timerId);
+        }
+    }
+
     async function mapWithConcurrency(items, worker, concurrency) {
         const results = new Array(items.length);
         let cursor = 0;
@@ -463,19 +488,29 @@
         return results;
     }
 
-    async function refreshBrowserSnapshot(syncCode) {
+    async function buildBrowserSnapshot() {
         const snapshot = await mapWithConcurrency(
             state.myFunds,
             async fund => {
-                const history = await fetchBrowserHistory(fund.code);
-                return history ? logic.buildFundResult(fund, history, null) : null;
+                const [history, estimate] = await Promise.all([
+                    fetchBrowserHistory(fund.code),
+                    fetchBrowserEstimate(fund.code)
+                ]);
+                return history || estimate ? logic.buildFundResult(fund, history, estimate) : null;
             },
             BROWSER_REFRESH_WORKERS
         );
         const freshCount = countCompleteSnapshots(snapshot);
         if (freshCount === 0) return null;
 
-        const mergedSnapshot = mergeMarketSnapshot(snapshot);
+        return { snapshot, freshCount };
+    }
+
+    async function refreshBrowserSnapshot(syncCode) {
+        const browserResult = await buildBrowserSnapshot();
+        if (!browserResult) return null;
+
+        const mergedSnapshot = mergeMarketSnapshot(browserResult.snapshot);
         const response = await fetch('/api/sync/publish/' + encodeURIComponent(syncCode), {
             method: 'POST',
             headers: {
@@ -492,8 +527,8 @@
             ...payload,
             browserFallback: true,
             stale: false,
-            fresh_count: freshCount,
-            fallback_count: state.myFunds.length - freshCount
+            fresh_count: browserResult.freshCount,
+            fallback_count: state.myFunds.length - browserResult.freshCount
         };
     }
 
@@ -628,8 +663,18 @@
             bar.style.width = '100%';
         } catch (error) {
             console.error('refreshNetworkData failed', error);
-            app.ui.showNotice(`行情刷新失败：${error.message}，已保留当前结果`, 'error', 5000);
-            app.ui.renderUI(state.cachedResults.length === 0);
+            const browserResult = await buildBrowserSnapshot();
+            if (browserResult) {
+                applyResults(mergeMarketSnapshot(browserResult.snapshot));
+                app.ui.showNotice(
+                    `服务端行情不可用，已通过当前设备更新 ${browserResult.freshCount}/${state.myFunds.length} 项`,
+                    'success',
+                    5000
+                );
+            } else {
+                app.ui.showNotice(`行情刷新失败：${error.message}，已保留当前结果`, 'error', 5000);
+                app.ui.renderUI(state.cachedResults.length === 0);
+            }
         } finally {
             state.refreshInFlight = false;
             setTimeout(() => { bar.style.width = '0%'; }, 500);
