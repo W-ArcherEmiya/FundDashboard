@@ -188,16 +188,23 @@
         return Number.isFinite(Number(value));
     }
 
+    function hasDisplayMetricValues(item) {
+        return Boolean(
+            item &&
+            isFiniteMetric(item.estNav) &&
+            isFiniteMetric(item.dailyProfit) &&
+            isFiniteMetric(item.holdProfit) &&
+            isFiniteMetric(item.totalAsset)
+        );
+    }
+
     function hasCompleteDisplayMetrics(item) {
         return Boolean(
             item &&
             item.valid !== false &&
             !item.isLoading &&
             !item.isUnavailable &&
-            isFiniteMetric(item.estNav) &&
-            isFiniteMetric(item.dailyProfit) &&
-            isFiniteMetric(item.holdProfit) &&
-            isFiniteMetric(item.totalAsset)
+            hasDisplayMetricValues(item)
         );
     }
 
@@ -237,6 +244,9 @@
                 code: fund.code,
                 group: fund.group || (override && override.group) || '默认分组'
             };
+            const snapshotWasUnavailable = Boolean(
+                result.isUnavailable || result.isLoading || !hasDisplayMetricValues(result)
+            );
 
             if (override) {
                 result.hasSyncOverride = true;
@@ -244,6 +254,17 @@
                     const value = Number(override[field]);
                     if (Number.isFinite(value)) result[field] = value;
                 });
+                if (!isFiniteMetric(result.dailyProfit)) result.dailyProfit = 0;
+                if (snapshotWasUnavailable && hasDisplayMetricValues(result)) {
+                    result.valid = true;
+                    result.isLoading = false;
+                    result.isUnavailable = false;
+                    result.isBackup = true;
+                    if (typeof result.isActual !== 'boolean') result.isActual = true;
+                    result.gztime = result.gztime && result.gztime !== '行情暂不可用'
+                        ? result.gztime
+                        : '截图快照';
+                }
             }
             return result;
         });
@@ -598,6 +619,7 @@
         getImportCandidateReviewRank,
         sortImportCandidatesForReview,
         evaluateExistingShareCalibration,
+        hasDisplayMetricValues,
         hasCompleteDisplayMetrics,
         getCloudSnapshotApplyDecision,
         mergeHoldingSnapshotOverrides,
