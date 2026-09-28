@@ -14,10 +14,24 @@
         if (!override) return result;
 
         const merged = { ...result, hasSyncOverride: true };
+        const snapshotWasUnavailable = Boolean(
+            merged.isUnavailable || merged.isLoading || !logic.hasDisplayMetricValues(merged)
+        );
         SYNC_OVERRIDE_FIELDS.forEach(field => {
             const value = Number(override[field]);
             if (Number.isFinite(value)) merged[field] = value;
         });
+        if (!Number.isFinite(Number(merged.dailyProfit))) merged.dailyProfit = 0;
+        if (snapshotWasUnavailable && logic.hasDisplayMetricValues(merged)) {
+            merged.valid = true;
+            merged.isLoading = false;
+            merged.isUnavailable = false;
+            merged.isBackup = true;
+            if (typeof merged.isActual !== 'boolean') merged.isActual = true;
+            merged.gztime = merged.gztime && merged.gztime !== '行情暂不可用'
+                ? merged.gztime
+                : '截图快照';
+        }
         const overrideName = String(override.name || '').trim();
         const overrideGroup = String(override.group || '').trim();
         if (overrideName) merged.name = overrideName;
@@ -381,23 +395,25 @@
                 ? direct
                 : incomingByCode.get(fund.code);
             const current = currentByCode.get(fund.code);
+            const mergedIncoming = mergeSyncOverride(incoming);
+            const mergedCurrent = mergeSyncOverride(current);
 
-            if (logic.hasCompleteDisplayMetrics(incoming)) {
-                const incomingName = String(incoming.name || '').trim();
-                const currentName = String(current && current.name || '').trim();
+            if (logic.hasCompleteDisplayMetrics(mergedIncoming)) {
+                const incomingName = String(mergedIncoming.name || '').trim();
+                const currentName = String(mergedCurrent && mergedCurrent.name || '').trim();
                 return mergeSyncOverride({
-                    ...incoming,
+                    ...mergedIncoming,
                     name: (!incomingName || incomingName === `基金 ${fund.code}`) && currentName
                         ? currentName
-                        : incoming.name,
+                        : mergedIncoming.name,
                     code: fund.code,
-                    group: fund.group || incoming.group || '默认分组'
+                    group: fund.group || mergedIncoming.group || '默认分组'
                 });
             }
-            if (logic.hasCompleteDisplayMetrics(current)) {
-                return { ...current, isRefreshFallback: true };
+            if (logic.hasCompleteDisplayMetrics(mergedCurrent)) {
+                return { ...mergedCurrent, isRefreshFallback: true };
             }
-            return incoming || {
+            return mergedIncoming || {
                 code: fund.code,
                 group: fund.group || '默认分组',
                 name: fund.name || `基金 ${fund.code}`,

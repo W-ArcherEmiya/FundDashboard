@@ -316,6 +316,27 @@ runTest('mergeHoldingSnapshotOverrides creates a visible row for a newly importe
     assert.equal(logic.hasCompleteDisplayMetrics(results[0]), true);
 });
 
+runTest('screenshot override replaces an unavailable cached row', () => {
+    const funds = [{ code: '002665', name: '万家瑞和灵活配置混合C', shares: '2868.37', cost: '1.29', group: '默认分组' }];
+    const cached = [{
+        code: '002665',
+        name: '万家瑞和灵活配置混合C',
+        valid: true,
+        isUnavailable: true,
+        gztime: '行情暂不可用'
+    }];
+    const overrides = {
+        '002665': { estNav: 1.3358, holdProfit: 131.57, totalAsset: 3831.57 }
+    };
+
+    const results = logic.mergeHoldingSnapshotOverrides(funds, cached, overrides);
+
+    assert.equal(results[0].isUnavailable, false);
+    assert.equal(results[0].dailyProfit, 0);
+    assert.equal(results[0].gztime, '截图快照');
+    assert.equal(logic.hasCompleteDisplayMetrics(results[0]), true);
+});
+
 runTest('removeFundsByGroup removes only the current group and keeps caches aligned', () => {
     const funds = [
         { code: '000001', group: '稳健' },
