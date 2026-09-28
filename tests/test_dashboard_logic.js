@@ -420,6 +420,48 @@ runTest('parseBrowserHistoryGlobals extracts money fund income', () => {
     assert.equal(result.isMoneyFund, true);
 });
 
+runTest('parseRealtimeEstimatePayload accepts a same-day Beijing estimate', () => {
+    const result = logic.parseRealtimeEstimatePayload({
+        data: JSON.stringify({
+            Expansion: {
+                FCODE: '016708',
+                SHORTNAME: '指数基金C',
+                GZ: '1.6832',
+                DWJZ: '1.6988',
+                GSZZL: '-0.92',
+                GZTIME: '2026-09-15 14:35'
+            }
+        })
+    }, '016708', new Date('2026-09-15T07:00:00Z'));
+
+    assert.deepEqual(result, {
+        fundcode: '016708',
+        name: '指数基金C',
+        gsz: 1.6832,
+        dwjz: 1.6988,
+        gszzl: -0.92,
+        gztime: '2026-09-15 14:35',
+        estimateSource: '天天基金盘中估值'
+    });
+});
+
+runTest('parseRealtimeEstimatePayload rejects stale and mismatched estimates', () => {
+    const payload = {
+        data: {
+            Expansion: {
+                FCODE: '016708',
+                GZ: '1.6832',
+                DWJZ: '1.6988',
+                GSZZL: '-0.92',
+                GZTIME: '2026-09-14 15:00'
+            }
+        }
+    };
+
+    assert.equal(logic.parseRealtimeEstimatePayload(payload, '016708', new Date('2026-09-15T07:00:00Z')), null);
+    assert.equal(logic.parseRealtimeEstimatePayload(payload, '021533', new Date('2026-09-14T07:00:00Z')), null);
+});
+
 runTest('buildFundResult prefers realtime estimate during daytime session', () => {
     const result = logic.buildFundResult(
         { code: '000001', shares: '10', cost: '1.2', group: '稳健' },
@@ -450,7 +492,7 @@ runTest('buildFundResult falls back to actual settlement when realtime data is s
     assertAlmostEqual(result.holdProfit, 0.8);
 });
 
-runTest('buildFundResult keeps same-day settlement as estimate before 23:00 Beijing time', () => {
+runTest('buildFundResult immediately prefers a same-day actual NAV over its estimate', () => {
     const result = logic.buildFundResult(
         { code: '000001', shares: '10', cost: '1.0', group: '稳健' },
         { name: '基金A', latest: 1.08, prev: 1.0, dateMs: Date.UTC(2026, 3, 11, 15, 0, 0) },
@@ -458,14 +500,14 @@ runTest('buildFundResult keeps same-day settlement as estimate before 23:00 Beij
         { now: new Date(Date.UTC(2026, 3, 11, 14, 30, 0)) }
     );
 
-    assert.equal(result.isActual, false);
-    assert.equal(result.gztime, '2026-04-11 14:35');
-    assert.equal(result.estNav, 1.2);
-    assertAlmostEqual(result.dailyProfit, 2);
-    assertAlmostEqual(result.holdProfit, 0);
+    assert.equal(result.isActual, true);
+    assert.equal(result.gztime, '实际净值 (04-11)');
+    assert.equal(result.estNav, 1.08);
+    assertAlmostEqual(result.dailyProfit, 0.8);
+    assertAlmostEqual(result.holdProfit, 0.8);
 });
 
-runTest('buildFundResult accepts same-day settlement after 23:00 Beijing time', () => {
+runTest('buildFundResult keeps using a same-day actual NAV later in the evening', () => {
     const result = logic.buildFundResult(
         { code: '000001', shares: '10', cost: '1.0', group: '稳健' },
         { name: '基金A', latest: 1.08, prev: 1.0, dateMs: Date.UTC(2026, 3, 11, 15, 0, 0) },

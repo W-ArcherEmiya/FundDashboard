@@ -394,12 +394,6 @@
             String(parts.day).padStart(2, '0');
     }
 
-    function isSameDaySettlementEligible(actualDateStr, now = new Date()) {
-        const nowParts = getBeijingDateParts(now);
-        const todayStr = formatBeijingDate(nowParts);
-        return actualDateStr !== todayStr || nowParts.hour >= 23;
-    }
-
     function parseBrowserHistoryGlobals(source) {
         const name = String(source && source.name || '').trim();
         const income = source && source.millionCopiesIncome;
@@ -438,6 +432,43 @@
         };
     }
 
+    function parseRealtimeEstimatePayload(payload, code, now = new Date()) {
+        let data = payload && payload.data;
+        if (typeof data === 'string') {
+            try {
+                data = JSON.parse(data);
+            } catch {
+                return null;
+            }
+        }
+
+        const expansion = data && data.Expansion;
+        if (!expansion || String(expansion.FCODE || '').trim() !== String(code || '').trim()) return null;
+
+        const gztime = String(expansion.GZTIME || '').trim();
+        const estimateDate = gztime.split(' ')[0];
+        if (estimateDate !== formatBeijingDate(getBeijingDateParts(now))) return null;
+
+        const estimatedNav = Number(expansion.GZ);
+        const previousNav = Number(expansion.DWJZ);
+        const estimatedRate = Number(expansion.GSZZL);
+        if (!Number.isFinite(estimatedNav) || estimatedNav <= 0 ||
+            !Number.isFinite(previousNav) || previousNav <= 0 ||
+            !Number.isFinite(estimatedRate)) {
+            return null;
+        }
+
+        return {
+            fundcode: String(code),
+            name: String(expansion.SHORTNAME || '').trim(),
+            gsz: estimatedNav,
+            dwjz: previousNav,
+            gszzl: estimatedRate,
+            gztime,
+            estimateSource: '天天基金盘中估值'
+        };
+    }
+
     function buildFundResult(fund, hist, rt, options = {}) {
         if (!hist && !rt) {
             return {
@@ -458,7 +489,6 @@
         if (hist) {
             const actualParts = getBeijingDateParts(hist.dateMs);
             const actualDateStr = formatBeijingDate(actualParts);
-            const settlementEligible = isSameDaySettlementEligible(actualDateStr, options.now || new Date());
 
             let currentNav;
             let prevNav;
@@ -492,17 +522,11 @@
             }
 
             const gzDateStr = rt && rt.gztime ? rt.gztime.split(' ')[0] : '';
-            if (rt && (gzDateStr > actualDateStr || !settlementEligible)) {
+            if (rt && gzDateStr > actualDateStr) {
                 currentNav = parseFloat(rt.gsz);
-                prevNav = settlementEligible ? hist.latest : hist.prev;
+                prevNav = hist.latest;
                 rate = parseFloat(rt.gszzl);
                 timeStr = rt.gztime;
-                isActual = false;
-            } else if (!settlementEligible) {
-                currentNav = hist.prev;
-                prevNav = hist.prev;
-                rate = 0;
-                timeStr = '等待正式净值';
                 isActual = false;
             } else {
                 currentNav = hist.latest;
@@ -514,7 +538,7 @@
                 isActual = true;
             }
 
-            const holdNav = isActual ? currentNav : (settlementEligible ? hist.latest : hist.prev);
+            const holdNav = isActual ? currentNav : hist.latest;
 
             const result = {
                 code: fund.code,
@@ -583,6 +607,7 @@
         summarizeDisplayData,
         getCurrentGroupItems,
         parseBrowserHistoryGlobals,
+        parseRealtimeEstimatePayload,
         buildFundResult
     };
 });

@@ -132,12 +132,6 @@ def bj_now(now: datetime | None = None) -> datetime:
     return value.astimezone(timezone.utc) + timedelta(hours=8)
 
 
-def is_same_day_settlement_eligible(actual_date: str, now: datetime | None = None) -> bool:
-    current_bj = bj_now(now)
-    today = current_bj.strftime("%Y-%m-%d")
-    return actual_date != today or current_bj.hour >= 23
-
-
 def date_ms_to_badge(date_ms: int | float | None) -> str:
     date_str = date_ms_to_bj_date_str(date_ms)
     if not date_str:
@@ -492,21 +486,14 @@ def build_snapshot_item(
     if hist:
         name = str((rt or {}).get("name") or hist.get("name") or fund.get("name") or f"基金 {code}")
         actual_date = date_ms_to_bj_date_str(hist.get("dateMs"))
-        settlement_eligible = is_same_day_settlement_eligible(actual_date, now)
         gztime = str(rt.get("gztime") or "") if rt else ""
         gz_date = gztime.split(" ")[0] if gztime else ""
 
-        if rt and (gz_date > actual_date or not settlement_eligible):
+        if rt and gz_date > actual_date:
             current_nav = to_float(rt.get("gsz"))
-            previous_nav = to_float(hist.get("latest") if settlement_eligible else hist.get("prev"))
+            previous_nav = to_float(hist.get("latest"))
             rate = to_float(rt.get("gszzl"))
             time_str = gztime
-            is_actual = False
-        elif not settlement_eligible:
-            current_nav = to_float(hist.get("prev"))
-            previous_nav = current_nav
-            rate = 0
-            time_str = "等待正式净值"
             is_actual = False
         else:
             current_nav = to_float(hist.get("latest"))
@@ -515,7 +502,7 @@ def build_snapshot_item(
             time_str = f"实际净值({date_ms_to_badge(hist.get('dateMs'))})"
             is_actual = True
 
-        hold_nav = current_nav if is_actual else to_float(hist.get("latest") if settlement_eligible else hist.get("prev"))
+        hold_nav = current_nav if is_actual else to_float(hist.get("latest"))
         result = {
             "code": code,
             "group": group,

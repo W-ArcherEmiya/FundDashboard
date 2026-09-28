@@ -250,7 +250,7 @@ class FundRefreshTests(unittest.TestCase):
         self.assertEqual(snapshot[0]['estNav'], 8.033)
         self.assertEqual(snapshot[0]['estimateSource'], '天天基金指数参考估值')
 
-    def test_build_snapshot_item_keeps_same_day_settlement_estimated_before_cutoff(self):
+    def test_build_snapshot_item_immediately_prefers_same_day_actual_nav(self):
         item = build_snapshot_item(
             {'code': '000001', 'shares': '10', 'cost': '1.0', 'group': '稳健'},
             {'name': '基金A', 'latest': 1.08, 'prev': 1.0, 'dateMs': SAME_DAY_HISTORY_MS},
@@ -258,13 +258,13 @@ class FundRefreshTests(unittest.TestCase):
             now=datetime(2026, 4, 11, 14, 30, tzinfo=timezone.utc),
         )
 
-        self.assertFalse(item['isActual'])
-        self.assertEqual(item['gztime'], '2026-04-11 14:35')
-        self.assertEqual(item['estNav'], 1.2)
-        self.assertAlmostEqual(item['dailyProfit'], 2)
-        self.assertAlmostEqual(item['holdProfit'], 0)
+        self.assertTrue(item['isActual'])
+        self.assertEqual(item['gztime'], '实际净值(04-11)')
+        self.assertEqual(item['estNav'], 1.08)
+        self.assertAlmostEqual(item['dailyProfit'], 0.8)
+        self.assertAlmostEqual(item['holdProfit'], 0.8)
 
-    def test_build_snapshot_item_accepts_same_day_settlement_after_cutoff(self):
+    def test_build_snapshot_item_keeps_same_day_actual_nav_later_in_the_evening(self):
         item = build_snapshot_item(
             {'code': '000001', 'shares': '10', 'cost': '1.0', 'group': '稳健'},
             {'name': '基金A', 'latest': 1.08, 'prev': 1.0, 'dateMs': SAME_DAY_HISTORY_MS},
