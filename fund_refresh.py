@@ -15,6 +15,7 @@ from urllib.request import Request, urlopen
 REQUEST_TIMEOUT_SECONDS = 8
 MAX_REFRESH_WORKERS = 12
 MAX_NAV_WORKERS = 6
+MAX_NAV_RETRY_WORKERS = 2
 USER_AGENT = "Mozilla/5.0 FundDashboard/1.0"
 EASTMONEY_HISTORY_URL = "https://fund.eastmoney.com/pingzhongdata/{code}.js?rt={timestamp}"
 EASTMONEY_LATEST_NAV_URL = (
@@ -622,15 +623,23 @@ def fetch_latest_navs(codes: list[str]) -> dict[str, float]:
         return code, nav if nav > 0 else None
 
     navs: dict[str, float] = {}
-    workers = max(1, min(MAX_NAV_WORKERS, len(unique_codes)))
-    with ThreadPoolExecutor(max_workers=workers) as executor:
-        futures = [executor.submit(fetch_one, code) for code in unique_codes]
-        for future in as_completed(futures):
-            try:
-                code, nav = future.result()
-            except Exception:
-                continue
-            if nav is not None:
-                navs[code] = nav
+
+    def fetch_pass(pass_codes: list[str], max_workers: int) -> None:
+        if not pass_codes:
+            return
+        workers = max(1, min(max_workers, len(pass_codes)))
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = [executor.submit(fetch_one, code) for code in pass_codes]
+            for future in as_completed(futures):
+                try:
+                    code, nav = future.result()
+                except Exception:
+                    continue
+                if nav is not None:
+                    navs[code] = nav
+
+    fetch_pass(unique_codes, MAX_NAV_WORKERS)
+    unresolved_codes = [code for code in unique_codes if code not in navs]
+    fetch_pass(unresolved_codes, MAX_NAV_RETRY_WORKERS)
 
     return navs

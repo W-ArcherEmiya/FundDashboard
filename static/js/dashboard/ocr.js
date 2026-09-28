@@ -1007,7 +1007,7 @@
         };
     }
 
-    function fetchPingzhongNav(code, timeoutMs = 3500) {
+    function fetchPingzhongNav(code, timeoutMs = 8000) {
         return new Promise(resolve => {
             const script = document.createElement('script');
             script.async = true;
@@ -1111,19 +1111,27 @@
             .filter(code => /^\d{6}$/.test(code)))];
         if (!validCodes.length) return {};
 
-        try {
-            const response = await fetch('/api/fund/navs', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ codes: validCodes })
-            });
-            const payload = await response.json().catch(() => ({}));
-            if (!response.ok || !payload.success || !payload.navs) return {};
-            return payload.navs;
-        } catch (error) {
-            console.warn('batch NAV lookup failed', error);
-            return {};
+        const navs = {};
+        let unresolvedCodes = validCodes;
+        for (let attempt = 0; attempt < 2 && unresolvedCodes.length; attempt += 1) {
+            try {
+                const response = await fetch('/api/fund/navs', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ codes: unresolvedCodes })
+                });
+                const payload = await response.json().catch(() => ({}));
+                if (!response.ok || !payload.success || !payload.navs) continue;
+                Object.entries(payload.navs).forEach(([code, nav]) => {
+                    const value = Number(nav);
+                    if (Number.isFinite(value) && value > 0) navs[code] = value;
+                });
+                unresolvedCodes = unresolvedCodes.filter(code => !navs[code]);
+            } catch (error) {
+                console.warn('batch NAV lookup failed', error);
+            }
         }
+        return navs;
     }
 
     function extractNameNearCode(text, code) {
