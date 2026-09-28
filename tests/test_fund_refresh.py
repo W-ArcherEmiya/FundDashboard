@@ -144,6 +144,28 @@ class FundRefreshTests(unittest.TestCase):
 
         self.assertEqual(navs, {'022851': 1.4782})
 
+    def test_fetch_latest_navs_retries_only_unresolved_codes(self):
+        original_latest_nav = fund_refresh.fetch_latest_nav
+        original_realtime = fund_refresh.fetch_realtime_estimate
+        calls = {}
+        try:
+            def fake_latest_nav(code):
+                calls[code] = calls.get(code, 0) + 1
+                if code == '002665' and calls[code] == 1:
+                    return None
+                return {'002665': 1.3358, '010422': 1.5550}.get(code)
+
+            fund_refresh.fetch_latest_nav = fake_latest_nav
+            fund_refresh.fetch_realtime_estimate = lambda _code: None
+
+            navs = fund_refresh.fetch_latest_navs(['002665', '010422'])
+        finally:
+            fund_refresh.fetch_latest_nav = original_latest_nav
+            fund_refresh.fetch_realtime_estimate = original_realtime
+
+        self.assertEqual(navs, {'002665': 1.3358, '010422': 1.5550})
+        self.assertEqual(calls, {'002665': 2, '010422': 1})
+
     def test_fetch_recent_history_parses_two_nav_records(self):
         original_fetch_text = fund_refresh.fetch_text
         try:
